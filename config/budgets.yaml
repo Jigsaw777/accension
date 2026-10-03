@@ -1,0 +1,11 @@
+budgets:
+  default_request_budget: 0.50
+  session_budget: 3.00
+  daily_soft_budget: 3.00
+  daily_hard_budget: 5.00
+  planner_budget: 0.20
+  worker_budget: 0.25
+  verification_budget: 0.05
+  max_frontier_calls: 2
+  max_initial_frontier_plans: 1
+

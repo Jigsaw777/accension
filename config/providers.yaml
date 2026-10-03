@@ -1,0 +1,19 @@
+providers:
+  local-server:
+    kind: openai
+    endpoint: http://127.0.0.1:8080/v1
+    local: true
+    enabled: false
+  foundry:
+    kind: foundry
+    endpoint: ${AZURE_OPENAI_ENDPOINT}
+    api_key_env: AZURE_OPENAI_API_KEY
+    api: responses
+    enabled: false
+  anthropic:
+    kind: anthropic
+    endpoint: https://api.anthropic.com/v1
+    api_key_env: ANTHROPIC_API_KEY
+    api: messages
+    enabled: false
+

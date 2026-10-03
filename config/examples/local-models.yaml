@@ -1,0 +1,19 @@
+# Copy to config/local.yaml and set your server's actual endpoint.
+# Top-level sections replace existing sections; keep any other providers you use.
+providers:
+  my-local-server:
+    kind: openai
+    endpoint: http://127.0.0.1:8080/v1
+    local: true
+    enabled: true
+models: []
+discovery:
+  enabled: true
+  interval_seconds: 300
+  inventory_providers: [my-local-server]
+  model_defaults:
+    # A starting prior, not a measured quality claim. Coding SLO remains 0.92.
+    quality_priors: {default: 0.85}
+  overrides: {}
+routing:
+  laya_enabled: false

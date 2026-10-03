@@ -1,0 +1,5 @@
+# Optional skill paths belong in ignored config/local.yaml.
+skills: {}
+tool_registry:
+  rtk: {command: rtk, role: token_optimization}
+  graphify: {command: graphify, role: repository_index}

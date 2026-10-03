@@ -1,0 +1,16 @@
+discovery:
+  enabled: true
+  interval_seconds: 300
+  azure_subscription: ''
+  azure_resource_group: ''
+  azure_account: ''
+  azure_tenant: organizations
+  management_token_env: AZURE_MANAGEMENT_TOKEN
+  # With Azure CLI installed and signed in, uncomment for renewable credentials:
+  # token_command: [az, account, get-access-token, --resource, https://management.azure.com/, --query, accessToken, -o, tsv]
+  inventory_providers: []
+  model_defaults:
+    tier: 2
+    quality_priors: {default: 0.85}
+  # Exact deployment aliases can override discovered metadata. No public-name tier guesses.
+  overrides: {}

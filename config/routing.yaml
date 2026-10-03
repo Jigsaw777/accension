@@ -1,0 +1,17 @@
+routing:
+  laya_enabled: false
+  laya_command: ''
+  laya_args: []
+  classifier_tool: laya_decide
+  laya_timeout: 2
+  laya_confidence_threshold: 0.80
+  jev_model: null
+  jev_risk_threshold: 70
+  require_jev_for_critical: true
+  frontier_planner_complexity_threshold: 65
+  max_parallel_workers: 2
+  local_first: true
+  allow_below_slo: false
+  quality_slos: {simple: 0.85, coding: 0.92, architecture: 0.96, critical: 0.98, explanation: 0.85}
+  timeouts: {arbiter: 30, local: 180, cloud: 90, planner: 120, tests: 120, mcp: 600}
+

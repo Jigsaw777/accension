@@ -1,0 +1,7 @@
+cache:
+  enabled: true
+  ttl_seconds: 86400
+  max_entries: 1000
+  lru_entries: 128
+  semantic_cache_enabled: false
+
