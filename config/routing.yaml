@@ -14,4 +14,3 @@ routing:
   allow_below_slo: false
   quality_slos: {simple: 0.85, coding: 0.92, architecture: 0.96, critical: 0.98, explanation: 0.85}
   timeouts: {arbiter: 30, local: 180, cloud: 90, planner: 120, tests: 120, mcp: 600}
-

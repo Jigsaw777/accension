@@ -11,4 +11,3 @@ if ($InstallClients) {
     if ($LASTEXITCODE -ne 0) { throw 'Client integration failed' }
 }
 & "$RouterRoot\scripts\start-router.ps1"
-

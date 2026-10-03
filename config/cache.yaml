@@ -4,4 +4,3 @@ cache:
   max_entries: 1000
   lru_entries: 128
   semantic_cache_enabled: false
-

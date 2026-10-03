@@ -16,4 +16,3 @@ providers:
     api_key_env: ANTHROPIC_API_KEY
     api: messages
     enabled: false
-

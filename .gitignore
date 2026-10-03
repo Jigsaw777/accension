@@ -19,4 +19,3 @@ scripts/claude-*.cmd
 scripts/claude-*.ps1
 dist/
 build/
-
