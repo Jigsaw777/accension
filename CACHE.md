@@ -24,4 +24,6 @@ rtk proxy .\scripts\router.cmd cache clear
 
 Hit counters are process-local. Token savings are tokenizer estimates, not billing receipts. Graphify's separate benchmark estimates retrieval size versus reading the whole source corpus; its ratio is not a measured savings claim for every model request.
 
-Semantic caching is deliberately absent in V1; enabling it raises a validation error. Redis is not used. Plans, cache entries and rollback files can contain private project information even though telemetry stores hashes/metadata by default. Keep `.router` local and ignored by Git. No automatic retention deletion is applied to plans, backups or traces.
+Semantic caching is not implemented; enabling it raises a validation error. Redis is not used. Plans, cache entries and rollback files can contain private project information even though traces store hashes/metadata by default. Keep `.router` local and ignored by Git. No automatic retention deletion is applied to plans, backups or traces.
+
+Savings Pulse retains graph hit/miss factors and observed plan reuse in receipts. Plan reuse is valued only from original recorded planner usage. Cached provider input remains cloud usage at its cache price. Cache clear preserves receipts, usage, savings and DNA. Context reduction covers the selected capsule subset, including optional-file trimming, not a hypothetical full-repository prompt. [Methodology](docs/SAVINGS.md).

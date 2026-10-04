@@ -1,0 +1,1 @@
+Choose only eligible deployment IDs. Return one concise reason code. Never override budgets, security policy or missing capabilities.

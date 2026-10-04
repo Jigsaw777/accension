@@ -1,37 +1,55 @@
-# MCP
+# MCP, task API and gateway
 
-Start with `.venv/Scripts/python.exe -m local_ai_router.cli --home <router-root> mcp`. Transport is stdio, using the official MCP Python SDK. No MCP network port is opened. Logs go to stderr. One Engine and its lazy Laya child are reused for the server lifetime.
+accs mcp starts the stdio server. The compatibility server name stays local-ai-router. A running hub also exposes authenticated Streamable HTTP at /mcp. Both use the same engine, contracts, usage and receipts.
 
-Six compact tools are exposed: `orchestrate_feature`, `orchestrate_bugfix`, `route_task`, `plan_task`, `execute_plan`, and grouped `router_info` (`status`, `models`, `costs`, `budget`, `cache`, `trace`). The two orchestration tools perform the same bounded execution flow; the bugfix goal supplies the defect context.
+## Companion tools
 
-Example request after registering a repository and its checks:
+| Tool | Purpose |
+|---|---|
+| orchestrate_feature / orchestrate_bugfix | Compile and execute an authorized registered repository task |
+| route_task / explain_route | No-inference eligibility explanation |
+| estimate_cost | Routing range and baseline economics, no shadow calls |
+| plan_task / execute_plan | Separate reviewable planning and execution |
+| receipt | Stored models, hashes, validation, egress and economics |
+| router_status | Hub or run readiness |
+| router_info | Paged models, providers, roles, recovery, costs, savings, cache, trace and budget |
+
+Example orchestrate_feature arguments:
 
 ```json
 {
-  "name": "orchestrate_feature",
-  "arguments": {
-    "task": "Add a greeting function with named and blank input tests",
-    "repo_path": "C:/path/to/project",
-    "constraints": ["Preserve existing public interfaces"],
-    "budget": 0.50,
-    "execution_mode": "safe-auto"
-  }
+  "task": "Add a greeting function with named and blank input tests",
+  "repo_path": "/path/to/project",
+  "constraints": ["Preserve public interfaces"],
+  "budget": 0.50,
+  "execution_mode": "plan-only",
+  "privacy": "LOCAL_ONLY",
+  "max_cloud_context": 0
 }
 ```
 
-Use `plan-only` to inspect a persisted plan before calling `execute_plan`. A registered root and at least one trusted validation command are required. MCP is a local capability to change those registered repositories; it is not a sandbox and does not grant permission beyond the user's request.
+Inspect the stored plan before execute_plan, or use safe-auto for planning and execution within registered boundaries. The host decides when to delegate and retains its conversation model. MCP grants file-changing capabilities, not a sandbox or authorization beyond the user's request.
 
-```mermaid
-flowchart LR
-    A[Codex desktop or CLI] -->|stdio| M[Router MCP]
-    B[Claude Desktop or Code] -->|stdio| M
-    M --> E[Shared execution pipeline]
-    C[codex-router helper] -->|Responses HTTP| G[127.0.0.1:8765]
-    D[claude-router helper] -->|Messages HTTP| G
-    G --> P[Compatible configured provider]
-    E --> P
-```
+## Native task API
 
-The MCP route delegates work while the host model stays the user's conversational interface. Gateway profiles separately change supported client API transport. They are independent features. The full MCP mock test actually invokes the tool through a stdio client and executes generated tests. Streamable HTTP MCP is not enabled in V1.
+All routes use the separate local API token (Authorization: Bearer). POST bodies are bounded JSON; task bodies follow the same Request schema as CLI/MCP.
 
-Recursion guard: downstream HTTP requests carry `X-Local-Router-Hop`; this gateway rejects reentry. Configuration rejects loopback downstream endpoints pointing at its own port. Host instructions explicitly exclude recursively delegating this router's own development. Operator-configured external MCP workers must not call the orchestrator again.
+| Method and path | Result |
+|---|---|
+| POST /accs/v1/route | No-inference route |
+| POST /accs/v1/plans | Plan ID, request ID and AXIR |
+| GET /accs/v1/plans/{id} | Portable plan |
+| POST /accs/v1/plans/import | Fresh bound plan from repo_path and axir |
+| POST /accs/v1/plans/{id}/execute | Execute with repo_path |
+| POST /accs/v1/tasks | Compile/run a task |
+| GET /accs/v1/runs/{id} | Status and receipt availability |
+| GET /accs/v1/receipts/{id} | Stored evidence |
+| GET /accs/v1/savings?period=today | Shared savings summary |
+
+Task calls are awaited requests, not a distributed job scheduler. CLI execution and UI updates share durable state.
+
+## Native inference gateway
+
+OpenAI Chat/Responses and Anthropic Messages stay on a fast compatible forwarding path, preserving supported tools/SSE. Gateway requests do not automatically compile AXIR. Eligible downstream protocols are required; there is no universal Bedrock/Gemini translation.
+
+MCP delegation and gateway transport are distinct. Downstream HTTP carries X-Local-Router-Hop; reentry and self-pointing endpoints are rejected. External MCP workers must not recursively invoke the orchestrator. Do not delegate Accension's own implementation to itself.

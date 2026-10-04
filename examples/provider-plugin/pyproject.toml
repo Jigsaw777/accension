@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "accension-example-loopback"
+version = "0.1.0"
+description = "Minimal trusted loopback provider example for Accension"
+requires-python = ">=3.11"
+dependencies = ["accension>=2,<3"]
+
+[project.entry-points."accension.providers"]
+example-loopback = "accension_example:ExampleProvider"
+
+[tool.setuptools]
+py-modules = ["accension_example"]

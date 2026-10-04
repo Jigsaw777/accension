@@ -4,7 +4,7 @@ import asyncio, hashlib, json, os, re, subprocess, sys
 from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 
-SECRET = re.compile(r"(?i)(?:bearer\s+[\w.-]{12,}|(?:api[_-]?key|password|secret|access_token)\s*[:=]\s*[\"']?[^\s\"',}]{8,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN .*PRIVATE KEY-----)")
+SECRET = re.compile(r"(?i)(?:bearer\s+[\w.-]{12,}|(?:api[_-]?key|password|secret|access_token)[\"']?\s*[:=]\s*[\"']?[^\s\"',}]{8,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN .*PRIVATE KEY-----)")
 SENSITIVE = re.compile(r"(?i)(^|[/\\])(?:\.env(?:\..*)?|credentials|id_rsa|id_ed25519|.*\.(?:pem|key|pfx|p12))$")
 FORBIDDEN_PARTS = {".git", ".router", ".codex", ".agents", ".aws", ".ssh", ".venv", "node_modules"}
 
@@ -14,6 +14,7 @@ def redact(value):
     if isinstance(value, list):
         return [redact(x) for x in value]
     if isinstance(value, str):
+        value = re.sub(r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[REDACTED]", value, flags=re.S)
         return SECRET.sub("[REDACTED]", value)
     return value
 
@@ -111,6 +112,10 @@ class Edits:
             try:
                 if digest(path) != change.original_sha256:
                     raise ValueError("Concurrent edit detected before replacement")
+                # Durable intent precedes replacement: recovery can distinguish an
+                # untouched original from an applied router write after a crash.
+                self.written[change.path] = hashlib.sha256(change.content.encode("utf-8")).hexdigest()
+                self._journal()
                 os.replace(temp, path)
             finally:
                 temp.unlink(missing_ok=True)
@@ -119,12 +124,40 @@ class Edits:
 
     def _journal(self):
         journal = safe_path(self.root, (self.backup / "journal.json").relative_to(self.root).as_posix(), internal=True)
-        journal.write_text(json.dumps({p: {"original_sha256": hashlib.sha256(v).hexdigest() if v is not None else None, "written_sha256": self.written.get(p), "backup": hashlib.sha256(p.encode()).hexdigest()+".bak"} for p,v in self.originals.items()}, indent=2))
+        temporary = journal.with_suffix(".saving")
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump({p: {"original_sha256": hashlib.sha256(v).hexdigest() if v is not None else None, "written_sha256": self.written.get(p), "backup": hashlib.sha256(p.encode()).hexdigest()+".bak"} for p,v in self.originals.items()}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(journal)
+
+    @classmethod
+    def restore(cls, root, run):
+        edits = cls(root, run)
+        journal = safe_path(root, (edits.backup / "journal.json").relative_to(root).as_posix(), internal=True)
+        if not journal.exists():
+            return edits
+        for name, item in json.loads(journal.read_text(encoding="utf-8")).items():
+            safe_path(root, name)
+            filename = hashlib.sha256(name.encode()).hexdigest()+".bak"
+            if item["backup"] != filename:
+                raise ValueError("Invalid recovery journal backup")
+            saved = safe_path(root, (edits.backup / filename).relative_to(root).as_posix(), internal=True)
+            original = saved.read_bytes() if item["original_sha256"] is not None else None
+            if original is not None and hashlib.sha256(original).hexdigest() != item["original_sha256"]:
+                raise ValueError("Recovery backup integrity check failed")
+            edits.originals[name] = original
+            edits.written[name] = item["written_sha256"]
+            edits.identities[os.path.normcase(name).replace("\\", "/")] = name
+        return edits
 
     def rollback(self):
         conflicts = []
         for name, original in self.originals.items():
             path = safe_path(self.root, name)
+            original_hash = hashlib.sha256(original).hexdigest() if original is not None else None
+            if digest(path) == original_hash:
+                continue  # Already rolled back, or crash before replacement.
             if digest(path) != self.written.get(name):
                 conflicts.append(name)
                 continue
@@ -148,8 +181,9 @@ def validation_argv(commands: dict[str, list[str]], name: str):
         raise ValueError("Shell/destructive validation entry is forbidden")
     if exe == "git" and any(a in {"push", "reset", "clean", "checkout"} for a in argv[1:]):
         raise ValueError("Mutating Git validation entry is forbidden")
-    if exe in {"python", "python3", "python3.12"} and any(a in {"-c", "-m"} for a in argv[1:]):
-        if "-c" in argv or ("-m" in argv and argv[argv.index("-m")+1] not in {"pytest", "unittest", "compileall", "ruff", "mypy"}):
+    if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", exe) and any(a in {"-c", "-m"} for a in argv[1:]):
+        module = argv[argv.index("-m")+1:argv.index("-m")+2] if "-m" in argv else []
+        if "-c" in argv or ("-m" in argv and (not module or module[0] not in {"pytest", "unittest", "compileall", "ruff", "mypy"})):
             raise ValueError("Only registered Python test/lint modules are allowed")
     return argv
 

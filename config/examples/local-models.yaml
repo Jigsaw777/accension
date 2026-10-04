@@ -16,4 +16,4 @@ discovery:
     quality_priors: {default: 0.85}
   overrides: {}
 routing:
-  laya_enabled: false
+  classifier_enabled: false

@@ -1,19 +1,33 @@
 # Security and trust boundaries
 
-## Reporting a vulnerability
+## Reporting
 
-Use the repository's **Security > Report a vulnerability** feature for private reports when available. Do not post exploit details, credentials or private source in a public issue. If private reporting is unavailable, open an issue requesting a private contact channel without disclosing the vulnerability. Version 0.1 is experimental; no response-time or production-security guarantee is provided.
+Use the repository's **Security > Report a vulnerability** feature when available. Otherwise request a private contact channel without publishing credentials or exploit details. V2 is an early implementation with no production-security or response-time guarantee.
 
-The gateway binds to `127.0.0.1:8765` by default. A generated local API token protects all data and mutation routes. `/health` and the token-entry HTML shell are public on loopback. Cross-origin browser requests and recursive router hops are rejected. Native provider requests use separate credentials, not the local client token. Do not expose this service on a public interface.
+## Local service
 
-Cloud credentials come from environment variables, optional Azure Identity encrypted persistence, or Windows DPAPI files. The repository contains no provider credentials. `.env` is ignored and `.env.example` contains names only; V1 does not automatically load `.env`. Explicitly set environment variables in the process starting the server. Provider errors avoid returning upstream bodies and tokens.
+Binding is restricted to localhost, 127.0.0.1 or ::1. Public health/static routes expose no provider credentials. GET /ui bootstraps a local session without sign-in. Data routes require that session or the separate API token. Host checks reject DNS-rebinding names; browser writes require same-origin and CSRF validation. Fetch-metadata checks reject cross-site bootstrap. Cookies are HttpOnly and SameSite=Strict.
 
-Repository roots must be registered. File paths are checked for traversal, protected directories, Windows reserved forms, symlinks, junctions and hardlinks. Edits use original hashes and exclusive temporary files. A per-repository OS lock avoids concurrent router runs. Failed/cancelled work restores only unchanged router-owned output. These controls reduce mistakes; they are not protection against a malicious same-user process racing filesystem checks.
+`accs ui` opens the page directly. API tokens are never placed in URLs or localStorage. Bundled assets use a restrictive Content Security Policy. These checks protect the browser boundary, not against another process running as the same OS user. Remote binding is refused even with --remote; no anonymous remote mode exists. Do not expose the service to untrusted users through a proxy.
 
-Validation commands are operator-owned argv arrays, never generated shell strings. Known destructive shell/Git forms are rejected. Checks run with secret-like environment variables removed, no inherited MCP input, bounded log tails and process-tree termination on timeout. **A trusted command can still execute repository-controlled code as your OS user.** Run only trusted repositories or add an external OS/container sandbox. A passing model-generated test alone is not independent assurance; register existing build/lint/regression checks.
+## Credentials
 
-Secret-like source and requests are blocked before orchestration sends them to models. Redaction is heuristic and cannot recognize every secret. The native gateway forwards explicit client input and does not inspect/redact arbitrary content, because doing so could alter tool protocols. Configure cloud access according to the repository's sensitivity. Telemetry omits full prompts/source by default, but plans, exact caches and rollback backups are local sensitive artifacts.
+Settings contain environment-variable names or vault references. Windows uses DPAPI; macOS/Linux use an optional supported keyring backend with no plaintext fallback. Azure Identity, AWS chains and Google ADC remain provider-native. Credential commands are trusted executables. The local gateway token is separate from downstream provider credentials.
 
-Money is reserved transactionally before inference. Unknown pricing blocks routing, uncertain failures retain their reservation, and cache-write prices must be explicit when caching is enabled. These are estimates, not provider-enforced credit limits. Verify price configuration and unexpected billing independently. There is no automatic quota purchase, deployment creation, public deployment or machine-wide persistence.
+Normalized provider errors avoid echoing upstream bodies. UI validation avoids returning entered secrets. Environment files are not automatically loaded. Keep backups, tokens and vault files private and outside Git.
 
-Autostart uses the current user's HKCU Run entry only. Integration files and registry values are backed up before modification. No credentials, cache database, generated API token or local backups belong in Git.
+## Repository execution
+
+Only registered roots can execute tasks. Paths reject traversal, protected directories, reserved Windows forms, symlinks, junctions and hardlinks. Edits check original hashes under a repository lock. Journals are flushed before replacement; rollback checks backups and router-written hashes, preserving later user changes.
+
+Validation uses operator-owned argv arrays, bounded output, timeouts and process-tree termination. Secret-like environment variables are removed. **Commands can still execute repository-controlled code as your OS user.** Plugins and MCP workers are also trusted code, not sandboxes. These controls do not defeat a malicious same-user process racing filesystem operations.
+
+## Egress, spending and integrations
+
+[Privacy](PRIVACY.md) gates run before built-in network/auth paths. Cloud context receives a heuristic secret preflight. Unknown/stale prices fail closed unless estimates are explicitly permitted. Reservations precede inference; uncertain failures retain reservations. Provider billing can differ from configured estimates.
+
+V2 integration writes change only the selected managed entry after preview, backups and stale-file checks. The UI installer does not change PATH or autostart. Legacy setup scripts keep their explicit opt-in behavior.
+
+Run `python scripts/scan_public.py` before sharing changes. Heuristics supplement review and cannot certify that arbitrary content contains no secrets.
+
+AXIR import grants no executable commands: checks must already be registered. Egress reservations are transactional and retain uncertain delivery. Integration undo refuses to overwrite later edits. Sovereign launchers use process-scoped transport settings without replacing global client configuration. See [egress budgets](docs/EGRESS_BUDGETS.md).

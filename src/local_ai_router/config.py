@@ -1,26 +1,28 @@
 from __future__ import annotations
 import os, re, secrets, hashlib, json
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 import yaml
-from pydantic import Field, model_validator
-from .schema import Strict, Model, Provider
+from pydantic import ConfigDict, Field, model_validator
+from .schema import Strict, Model, Provider, EgressBudget
+from .migration import LegacyRoutingAccessors, migrate_routing
 
-class Routing(Strict):
-    laya_confidence_threshold: float = Field(default=.80, ge=0, le=1)
-    jev_risk_threshold: int = Field(default=70, ge=0, le=100)
+class Routing(LegacyRoutingAccessors, Strict):
+    classifier_confidence_threshold: float = Field(default=.80, ge=0, le=1)
+    arbiter_risk_threshold: int = Field(default=70, ge=0, le=100)
     frontier_planner_complexity_threshold: int = Field(default=65, ge=0, le=100)
     max_parallel_workers: int = Field(default=2, ge=1, le=16)
     local_first: bool = True
-    laya_enabled: bool = True
-    laya_command: str = ""
-    laya_args: list[str] = []
-    classifier_tool: str = Field(default="laya_decide", min_length=1)
-    laya_timeout: float = 2
-    jev_model: str | None = None
-    require_jev_for_critical: bool = True
+    classifier_enabled: bool = False
+    classifier_command: str = ""
+    classifier_args: list[str] = []
+    classifier_tool: str = Field(default="classify", min_length=1)
+    classifier_timeout: float = Field(default=2, gt=0, le=120)
+    arbiter_model: str | None = None
+    require_arbiter_for_critical: bool = False
     planner_model_candidates: list[str] = []
-    quality_slos: dict[str, float] = {"simple": .85, "coding": .92, "architecture": .96, "critical": .98, "explanation": .85}
+    quality_slos: dict[str, float] = {"simple": .85, "coding": .90, "architecture": .94, "critical": .98, "explanation": .85}
     cost_weight: float = .15
     latency_weight: float = .03
     failure_risk_weight: float = .2
@@ -34,6 +36,84 @@ class Routing(Strict):
     circuit_cooldown: float = 60
     timeouts: dict[str, float] = {"arbiter": 30, "local": 180, "cloud": 90, "planner": 120, "tests": 120, "mcp": 600}
     token_ceilings: dict[str, int] = {"simple": 4000, "coding": 12000, "architecture": 20000, "critical": 24000, "explanation": 6000}
+    preset: Literal["balanced", "maximum-savings", "quality-first", "fully-local", "local-control", "custom"] = "balanced"
+    allow_unknown_pricing: bool = False
+    unknown_input_price: float = Field(default=20, gt=0)
+    unknown_output_price: float = Field(default=100, gt=0)
+    price_max_age_days: int = Field(default=30, ge=1)
+    allow_stale_pricing: bool = False
+    resource_aware: bool = True
+    available_ram_mb: float | None = Field(default=None, ge=0)
+    max_cost_confirmation: float = Field(default=.5, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate(cls, data):
+        return migrate_routing(data) if isinstance(data, dict) else data
+
+    @model_validator(mode="after")
+    def bounds(self):
+        if any(not 0 <= value <= 1 for value in self.quality_slos.values()):
+            raise ValueError("Quality SLOs must be probabilities")
+        if any(value <= 0 for value in self.timeouts.values()) or any(value < 256 for value in self.token_ceilings.values()):
+            raise ValueError("Timeouts and token ceilings must be positive")
+        return self
+
+
+class ControlPlane(Strict):
+    routing_location: Literal["local-only", "hybrid"] = "local-only"
+    fully_local: bool = False
+    telemetry: Literal[False] = False
+    mode: Literal["companion", "sovereign"] = "companion"
+
+
+class RolePolicy(Strict):
+    strategy: Literal["auto", "preferred", "pinned", "disabled"] = "auto"
+    model: str | None = None
+    locality: Literal["local-only", "local-preferred", "any"] = "local-preferred"
+    minimum_quality: float | None = Field(default=None, ge=0, le=1)
+    allowed_provider_groups: list[str] = []
+
+
+ROLE_NAMES = ("classifier", "arbiter", "planner", "executor", "fast_executor", "complex_executor", "reviewer", "repairer", "compactor", "summarizer", "embedding", "vision")
+
+
+class Privacy(EgressBudget):
+    mode: Literal["LOCAL_ONLY", "CLOUD_REDACTED", "CLOUD_ALLOWED"] = "LOCAL_ONLY"
+    never_send: list[str] = []
+
+    @model_validator(mode="after")
+    def relative_patterns(self):
+        if any(p.startswith(("/", "\\")) or ".." in p.replace("\\", "/").split("/") or ":" in p for p in self.never_send):
+            raise ValueError("Sensitive path patterns must be repository-relative")
+        return self
+
+
+class Plugins(Strict):
+    enabled: list[str] = []
+
+
+class Calibration(Strict):
+    budget: float = Field(default=.05, ge=0, le=10)
+    max_models: int = Field(default=3, ge=1, le=10)
+    max_cases: int = Field(default=11, ge=1, le=20)
+
+
+class Runtime(Strict):
+    discovery_concurrency: int = Field(default=8, ge=1, le=256)
+    health_probe_concurrency: int = Field(default=8, ge=1, le=256)
+    inference_concurrency: int = Field(default=8, ge=1, le=256)
+    calibration_concurrency: int = Field(default=2, ge=1, le=64)
+    discovery_timeout: float = Field(default=120, gt=0, le=3600)
+
+class Savings(Strict):
+    enabled: bool = True
+    baseline_method: Literal["DIRECT_MODEL", "HOST_MODEL", "USER_SELECTED_MODEL", "QUALITY_BASELINE", "DISABLED"] = "DIRECT_MODEL"
+    baseline_model: str | None = None
+    header_period: Literal["current", "session", "today", "7d", "30d", "all"] = "today"
+    show_tokens: bool = True
+    show_percentage: bool = True
+    currency: Literal["USD"] = "USD"
 
 class Budgets(Strict):
     default_request_budget: float = Field(default=.5, ge=0)
@@ -56,7 +136,7 @@ class CacheConfig(Strict):
     @model_validator(mode="after")
     def exact_only(self):
         if self.semantic_cache_enabled:
-            raise ValueError("Semantic cache is not implemented in V1; use exact caching")
+            raise ValueError("Semantic cache is not implemented; use exact caching")
         return self
 
 class Repository(Strict):
@@ -65,6 +145,15 @@ class Repository(Strict):
     allow_cloud: bool = False
     max_file_bytes: int = 200000
     max_context_files: int = 12
+    privacy: Privacy | None = None
+
+    @property
+    def cloud_allowed(self):
+        return self.privacy.mode != "LOCAL_ONLY" if self.privacy is not None else self.allow_cloud
+
+    @property
+    def privacy_mode(self):
+        return self.privacy.mode if self.privacy is not None else "CLOUD_ALLOWED" if self.allow_cloud else "LOCAL_ONLY"
 
 class Discovery(Strict):
     enabled: bool = True
@@ -79,8 +168,15 @@ class Discovery(Strict):
     inventory_providers: list[str] = []
     model_defaults: dict = {"tier": 2, "quality_priors": {"default": 0.85}}
     overrides: dict[str, dict] = {}
+    local_scan: bool = True
+    local_endpoints: dict[str, str] = {"ollama": "http://127.0.0.1:11434", "lmstudio": "http://127.0.0.1:1234/v1", "local-openai": "http://127.0.0.1:8080/v1", "vllm": "http://127.0.0.1:8000/v1"}
+    probe_timeout: float = Field(default=.5, gt=0, le=10)
 
 class Settings(Strict):
+    # Runtime discovery updates providers and models together; management writes
+    # validate a complete replacement Settings before committing it.
+    model_config = ConfigDict(extra="forbid", validate_assignment=False, allow_inf_nan=False)
+    schema_version: Literal[2] = 2
     home: Path
     host: str = "127.0.0.1"
     port: int = Field(default=8765, ge=1024, le=65535)
@@ -94,6 +190,40 @@ class Settings(Strict):
     tool_registry: dict[str, dict] = {}
     discovery: Discovery = Field(default_factory=Discovery)
     mock: bool = False
+    control_plane: ControlPlane = Field(default_factory=ControlPlane)
+    roles: dict[str, RolePolicy] = Field(default_factory=lambda: {name: RolePolicy(locality="local-only" if name in ("classifier", "arbiter") else "local-preferred") for name in ROLE_NAMES})
+    plugins: Plugins = Field(default_factory=Plugins)
+    calibration: Calibration = Field(default_factory=Calibration)
+    runtime: Runtime = Field(default_factory=Runtime)
+    privacy: EgressBudget = Field(default_factory=EgressBudget)
+    savings: Savings = Field(default_factory=Savings)
+
+    @model_validator(mode="before")
+    @classmethod
+    def version(cls, data):
+        if isinstance(data, dict) and data.get("schema_version") == 1:
+            data = {**data, "schema_version": 2}
+        return data
+
+    @model_validator(mode="after")
+    def valid_boundaries(self):
+        if self.host not in ("localhost", "127.0.0.1", "::1"):
+            raise ValueError("Accension must bind to a loopback host")
+        if any(name not in ROLE_NAMES for name in self.roles):
+            raise ValueError("Unknown role policy")
+        ids = [m.id for m in self.models]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate model ids")
+        if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name) for name in self.providers):
+            raise ValueError("Provider instance IDs must use letters, digits, dots, hyphens or underscores")
+        for model in self.models:
+            if model.provider not in self.providers:
+                raise ValueError("Unknown provider for " + model.id)
+        for provider in self.providers.values():
+            validate_endpoint(provider, self.port)
+        for endpoint in self.discovery.local_endpoints.values():
+            validate_endpoint(Provider(kind="openai", endpoint=endpoint, local=True), self.port)
+        return self
 
     @property
     def state(self) -> Path:
@@ -127,10 +257,32 @@ class Settings(Strict):
                 return repo
         raise ValueError("Repository is not registered. Use router repo add PATH first.")
 
+def default_home() -> Path:
+    checkout = Path(__file__).resolve().parents[2]
+    if (checkout / "config").is_dir() and (checkout / "pyproject.toml").is_file():
+        return checkout
+    return Path(os.getenv("APPDATA", str(Path.home() / ".config"))) / "accension"
+
+
+def validate_endpoint(provider: Provider, port: int):
+    if not provider.endpoint:
+        return
+    u = urlparse(provider.endpoint)
+    if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password or u.query or u.fragment:
+        raise ValueError("Provider endpoint must be HTTP(S), without credentials/query/fragment")
+    loopback = u.hostname in ("localhost", "127.0.0.1", "::1")
+    if u.hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0") and u.port == port:
+        raise ValueError("Recursion: downstream points to this gateway")
+    if provider.local and not loopback:
+        raise ValueError("Local provider must use a loopback endpoint")
+    if not loopback and u.scheme != "https":
+        raise ValueError("Remote provider endpoints require HTTPS")
+
+
 def load(home: str | Path | None = None, mock: bool = False) -> Settings:
-    root = Path(home or os.getenv("ROUTER_HOME") or Path(__file__).resolve().parents[2]).resolve()
+    root = Path(home or os.getenv("ROUTER_HOME") or default_home()).resolve()
     data: dict = {"home": root, "mock": mock}
-    for name in ("providers", "models", "routing", "budgets", "cache", "skills", "repositories", "discovery", "local"):
+    for name in ("version", "providers", "models", "routing", "budgets", "cache", "skills", "repositories", "discovery", "roles", "control_plane", "runtime", "privacy", "savings", "local"):
         path = root / "config" / f"{name}.yaml"
         if path.exists():
             raw = path.read_text(encoding="utf-8")
@@ -138,24 +290,9 @@ def load(home: str | Path | None = None, mock: bool = False) -> Settings:
             raw = re.sub(r'\$\{([A-Z_][A-Z0-9_]*)\}', lambda m: json.dumps(os.getenv(m[1], "")), raw)
             data.update(yaml.safe_load(raw) or {})
     settings = Settings.model_validate(data)
-    ids = [m.id for m in settings.models]
-    if len(ids) != len(set(ids)):
-        raise ValueError("Duplicate model ids")
-    for model in settings.models:
-        if model.provider not in settings.providers:
-            raise ValueError(f"Unknown provider for {model.id}")
-    for provider in settings.providers.values():
-        if provider.endpoint:
-            u = urlparse(provider.endpoint)
-            if u.scheme not in ("http", "https") or u.username or u.password or u.query:
-                raise ValueError("Provider endpoint must be HTTP(S), without credentials/query")
-            if u.hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0") and u.port == settings.port:
-                raise ValueError("Recursion: downstream points to this gateway")
-            if provider.local and u.hostname not in ("localhost", "127.0.0.1", "::1"):
-                raise ValueError("Local provider must use a loopback endpoint")
     if mock:
         settings.providers = {"mock": Provider(kind="mock", local=True)}
         settings.models = [Model(id="mock-worker", provider="mock", deployment_name="mock-worker", input_price=0, output_price=0, supports_tools=True, supports_structured_output=True, supports_streaming=True, supports_responses_api=True, quality_priors={"default": .99}, concurrency_limit=4)]
-        settings.routing.laya_enabled = False
-        settings.routing.require_jev_for_critical = False
+        settings.routing.classifier_enabled = False
+        settings.routing.require_arbiter_for_critical = False
     return settings

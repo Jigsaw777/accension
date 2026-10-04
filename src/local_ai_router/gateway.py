@@ -5,8 +5,17 @@ from fastapi import HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from .providers import estimate_cost, token_upper_bound, usage_from
 from .routing import deterministic
+from .privacy import guard_provider, preflight, repository_scope, fully_local
+from .engine import active_operation
 
-async def forward(engine, protocol, body, session="gateway"):
+@active_operation
+async def forward(engine, protocol, body, session="gateway", scoped=False):
+    metadata = body.get("metadata") or {}
+    if not scoped and isinstance(metadata, dict) and metadata.get("accension_repository"):
+        repository = engine.settings.repository(metadata["accension_repository"])
+        payload = {**body, "metadata": {k: v for k, v in metadata.items() if k != "accension_repository"}}
+        with repository_scope(repository):
+            return await forward(engine, protocol, payload, session, scoped=True)
     if body.get("previous_response_id") or body.get("conversation"):
         raise HTTPException(400, "Server-side conversation references are unsupported; send explicit history so cost can be bounded")
     if "n" in body and (type(body["n"]) is not int or body["n"] != 1):
@@ -16,7 +25,8 @@ async def forward(engine, protocol, body, session="gateway"):
     allowed_tool_types = {"function", "custom", None} if protocol == "messages" else {"function", "custom"}
     if any(not isinstance(t, dict) or t.get("type") not in allowed_tool_types for t in body.get("tools", [])):
         raise HTTPException(400, "Only client-executed tools are supported; hosted tool costs are not configured")
-    if body.get("model", "router-auto") not in {"router-auto", "router-local", "router-cheap", "router-balanced", "router-quality", "router-planner"}:
+    virtual = body.get("model", "accension-auto").replace("router-", "accension-", 1)
+    if virtual not in {"accension-auto", "accension-local", "accension-cheap", "accension-balanced", "accension-quality", "accension-planner"}:
         raise HTTPException(400, "Unknown virtual model")
     rid = uuid4().hex
     c = deterministic(json.dumps(body.get("input", body.get("messages", "")))[-6000:])
@@ -30,17 +40,45 @@ async def forward(engine, protocol, body, session="gateway"):
             return value.get("type") in {"input_image", "image_url", "image", "input_audio", "audio", "input_file", "file", "video"} or any(has_unmetered_content(v) for v in value.values())
         return False
     if has_unmetered_content(body.get("input", body.get("messages", []))):
-        raise HTTPException(400, "Multimodal and remote-file input accounting is not supported in V1")
+        raise HTTPException(400, "Multimodal and remote-file input accounting is not supported by the native gateway")
     if '"cache_control"' in json.dumps(body):
         caps.append("prompt_cache")
-    candidates = engine.router.candidates(c, "gateway", caps, allow_cloud=body.get("model") != "router-local", max_tier=2 if body.get("model") == "router-cheap" else 4)
-    native = [m for m in candidates if engine.settings.providers[m.provider].kind == "mock" or (engine.settings.providers[m.provider].kind == "anthropic" if protocol == "messages" else m.supports_responses_api if protocol == "responses" else m.supports_chat_completions)]
+    from .roles import RoleResolver
+    selection_settings = engine.settings
+    presets = {"accension-cheap": "maximum-savings", "accension-balanced": "balanced", "accension-quality": "quality-first"}
+    if virtual in presets:
+        from .policy import preset
+        routing, control = preset(engine.settings, presets[virtual])
+        control.fully_local = fully_local(engine.settings)
+        selection_settings = engine.settings.model_copy(update={"routing": routing, "control_plane": control})
+    role = "planner" if virtual == "accension-planner" else "gateway"
+    candidates, explanation = RoleResolver(selection_settings, engine.store, engine.providers).select(c, role, caps,
+        allow_cloud=virtual != "accension-local", budget=engine.settings.budgets.default_request_budget)
+    target_protocol = {"messages": "anthropic_messages", "responses": "openai_responses", "chat": "openai_chat"}[protocol]
+    def compatible(model):
+        provider = engine.settings.providers[model.provider]
+        if provider.kind == "mock":
+            return True
+        from .errors import ProviderError
+        try:
+            if target_protocol not in engine.providers.plugins.get(provider.kind).manifest().protocols:
+                return False
+        except ProviderError:
+            return False
+        return model.supports_responses_api if protocol == "responses" else model.supports_chat_completions if protocol == "chat" else True
+    native = [model for model in candidates if compatible(model)]
+    engine.store.trace(rid, "route", virtual_model=virtual, candidates=[m.id for m in native], reason_codes=["LOCAL_CAPABILITY_AND_POLICY_GATES"])
     if not native:
         raise HTTPException(503, "No healthy configured provider supports this protocol and quality policy")
+    host_model = metadata.get("accension_host_model") if isinstance(metadata, dict) else None
+    engine.store.economics("begin", rid, session, "gateway", host_model=host_model)
+    if isinstance(body.get("metadata"), dict):
+        body = {**body, "metadata": {k:v for k,v in body["metadata"].items() if k != "accension_host_model"}}
     error = None
     for model in native:
         provider = engine.settings.providers[model.provider]
-        payload = dict(body)
+        guard_provider(engine.settings, provider, "gateway")
+        payload = preflight(dict(body), provider)
         payload["model"] = model.deployment_name
         field = "max_output_tokens" if protocol == "responses" else "max_completion_tokens" if protocol == "chat" and "max_completion_tokens" in payload else "max_tokens"
         maximum = min(int(payload.get(field) or model.max_output), model.max_output)
@@ -53,18 +91,26 @@ async def forward(engine, protocol, body, session="gateway"):
         if inputs + maximum > model.context_window:
             continue
         estimate = estimate_cost(model, inputs, maximum, reserve=True)
-        sem = engine.providers.semaphores[model.id]
-        await sem.acquire()
+        sem = await engine.providers.acquire_slot(model)
         call = None
         start = time.monotonic()
         try:
             engine.providers._rate(model)
             call = engine.store.reserve(rid, session, "gateway", model, estimate, engine.settings.budgets.default_request_budget)
+            try:
+                from .contracts import reserve_egress
+                reserve_egress(engine.store, call, rid, model, "gateway", inputs)
+            except BaseException:
+                engine.store.settle(call, 0, {}, 0)
+                call = None
+                raise
             if provider.kind == "mock":
                 sem.release()
                 return mock_response(engine, protocol, payload, rid, call, model)
             headers = await engine.providers.headers(provider)
-            response = await engine.providers.client.send(engine.providers.client.build_request("POST", provider.endpoint.rstrip("/")+"/"+("chat/completions" if protocol == "chat" else protocol), headers=headers, json=payload, timeout=engine.settings.routing.timeouts["cloud"]), stream=bool(body.get("stream")))
+            from .transports import HTTPTransport
+            base = HTTPTransport().base(engine.providers.context(provider, model.provider))
+            response = await engine.providers.client.send(engine.providers.client.build_request("POST", base+"/"+("chat/completions" if protocol == "chat" else protocol), headers=headers, json=payload, timeout=engine.settings.routing.timeouts["local" if provider.local else "cloud"]), stream=bool(body.get("stream")))
             response.raise_for_status()
             if body.get("stream"):
                 if "text/event-stream" not in response.headers.get("content-type", ""):
@@ -107,6 +153,7 @@ async def forward(engine, protocol, body, session="gateway"):
                         engine.store.settle(call, cost, usage.model_dump() if usage else {}, time.monotonic()-start, failed=not finished)
                         engine.store.health_result(model.id, finished)
                         engine.store.trace(rid, "gateway", model=model.id, protocol=protocol, complete=finished)
+                        engine.store.economics("finish", rid, "complete" if finished else "uncertain")
                         sem.release()
                 return StreamingResponse(events(), media_type="text/event-stream", headers={"X-Router-Request-Id": rid, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
             data = response.json()
@@ -114,6 +161,7 @@ async def forward(engine, protocol, body, session="gateway"):
             cost = estimate_cost(model, usage.input_tokens, usage.output_tokens, usage.cached_tokens, usage.cache_write_tokens) if usage.input_tokens or usage.output_tokens else estimate
             engine.store.settle(call, cost, usage.model_dump(), time.monotonic()-start)
             engine.store.health_result(model.id, True)
+            engine.store.economics("finish", rid)
             sem.release()
             return JSONResponse(data, headers={"X-Router-Request-Id": rid})
         except BaseException as exc:
@@ -121,19 +169,29 @@ async def forward(engine, protocol, body, session="gateway"):
             if call:
                 engine.store.settle(call, None, {}, time.monotonic()-start, failed=True)
             if isinstance(exc, asyncio.CancelledError):
+                engine.store.economics("pause", rid, "interrupted")
                 raise
             from .store import BudgetExceeded
             if isinstance(exc, BudgetExceeded):
+                engine.store.economics("finish", rid, "failed")
                 raise HTTPException(429, str(exc)) from None
-            engine.store.health_result(model.id, False)
-            error = type(exc).__name__
+            from .errors import PrivacyViolation
+            if isinstance(exc, PrivacyViolation):
+                engine.store.economics("finish", rid, "failed")
+                raise HTTPException(403, str(exc)) from None
+            from .errors import normalize_error
+            normalized = normalize_error(exc)
+            engine.providers.record_failure(model, normalized)
+            error = normalized.code
             # No retry of a streamed response after bytes have been sent.
+    engine.store.economics("finish", rid, "failed")
     raise HTTPException(503, "All compatible providers unavailable: "+str(error))
 
 def mock_response(engine, protocol, payload, rid, call, model):
     text = "Local router mock response."
     usage = {"input_tokens": 5, "output_tokens": 6}
     engine.store.settle(call, 0, usage, 0)
+    engine.store.economics("finish", rid)
     if protocol == "responses":
         item = {"id": "msg_"+rid, "type": "message", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": text, "annotations": []}]}
         data = {"id": "resp_"+rid, "object": "response", "created_at": int(time.time()), "status": "completed", "model": "router-auto", "output": [item], "usage": {**usage, "total_tokens": 11}}

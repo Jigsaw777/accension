@@ -1,31 +1,22 @@
 # Contributing
 
-Issues, bug reports, tests, documentation and focused pull requests are welcome. For a substantial change, open an issue describing the problem and intended behavior first.
+Use Python 3.11+ and `python -m pip install -e ".[test]"`. Preserve legacy client names, native gateway payloads, budgets, repository locks and rollback guards.
 
-## Development
-
-Use a source checkout and Python 3.12 or newer:
+## Checks
 
 ```sh
-python -m venv .venv
-# Activate .venv using your shell's command.
-python -m pip install -e '.[test]'
 python -m pytest -q
+python scripts/scan_public.py
+git diff --check
+python -m pip wheel . --no-deps --wheel-dir dist
 ```
 
-Tests use mock providers and temporary repositories. They do not require cloud credentials or paid inference. Personal `config/local.yaml` is excluded from test fixtures. Run the complete suite when changing routing, budgets, file edits, MCP or provider protocols. Add regression coverage for behavior changes; do not weaken checks to make a model output pass.
+If Windows denies the system pytest temp directory, use `--basetemp .router/pytest-local`. Optional JavaScript syntax check: `node --check src/local_ai_router/static/app.js`. Node is not required at runtime.
 
-Keep changes small, use existing libraries and preserve bounded retries, independent validation, transaction-based budgets and repository containment. Document new configuration and limitations. Model-generated code is welcome when you understand and verify it.
+Tests use mocked providers/auth, native streaming/tools, deterministic routing, bounded edits, budgets, migrations, UI sessions, calibration, plugin contracts and recovery. CI targets Windows, Ubuntu and macOS with Python 3.11–3.13. CI must never require paid credentials.
 
-Never commit `.env`, `.router`, local configuration, keys, model weights, generated launchers, private reports or source from other projects. Use fake credentials and mock endpoints in tests. Report vulnerabilities through the procedure in SECURITY.md rather than posting secrets publicly.
+Provider contributions should use [the SDK](docs/PLUGIN_SDK.md) and [example package](examples/provider-plugin). Verify model mapping, usage, errors and redaction with offline fixtures. Keep unknown capabilities and prices conservative.
 
-By intentionally submitting a contribution for inclusion, you agree that it is provided under this project's Apache-2.0 license. Only contribute work you have the right to submit. Third-party code must retain its required license and attribution.
+Never commit local configuration, databases, vault files, personal paths, auth caches, private fixtures or generated plans. Secret scanning is heuristic; inspect the diff too. Document untested platforms and protocols honestly. Security reports follow [SECURITY.md](SECURITY.md). Contributions use Apache-2.0 and preserve third-party notices.
 
-## Review checklist
-
-- Explain the concrete problem and resulting behavior.
-- Include the relevant verification command and result.
-- Identify remaining limitations or compatibility changes.
-- Keep provider costs and credentials out of default test execution.
-
-Be respectful, specific and constructive in project discussions.
+Compiler changes must preserve AXIR validation, privacy/egress intersection, registered checks, stale hashes and receipt integrity. Accounting tests should cover missing facts, retries, negative savings, cache/local token distinctions, frozen prices, failure isolation and restart persistence. Keep header queries indexed and use mock scale fixtures. Browser changes need keyboard, narrow-screen and light/dark checks; screenshot fixtures must be labeled mock.

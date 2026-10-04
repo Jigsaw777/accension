@@ -27,6 +27,7 @@ async def evaluate(engine, budget=0, model_id=None, calibrate=False):
                 "calibration_updated": False}
     models = [m for m in engine.settings.models if m.enabled and (not model_id or m.id == model_id)]
     report, rid = [], uid()
+    engine.store.economics("begin", rid, "eval", "evaluation")
     for model in models:
         for family, prompt, kind in CASES:
             if engine.store.costs(rid)["estimated_usd"] + estimate_cost(model, 2000, 512) > budget:
@@ -34,7 +35,7 @@ async def evaluate(engine, budget=0, model_id=None, calibrate=False):
             start = time.monotonic()
             passed, check = False, "schema_only"
             try:
-                result = await engine.providers.generate(model, [{"role": "system", "content": 'Return JSON {"answer": "..."} only.'}, {"role": "user", "content": prompt}], "executor", rid, "eval", min(budget, engine.settings.budgets.default_request_budget), max_output=512)
+                result = await engine.providers.generate(model, [{"role": "system", "content": 'Return JSON {"answer": "..."} only.'}, {"role": "user", "content": prompt}], "executor", rid, "eval", min(budget, engine.settings.budgets.default_request_budget), max_output=512, task_id=rid+"-"+model.id+"-"+family)
                 answer = parse_json(result.text)["answer"]
                 passed = isinstance(answer, str) and bool(answer.strip())
                 if kind == "python":
@@ -51,4 +52,5 @@ async def evaluate(engine, budget=0, model_id=None, calibrate=False):
             if calibrate and check in {"exact_match", "expected_finding"}:
                 engine.store.success(model.id, family, passed, latency)
     engine.store.put("evaluation:"+rid, report)
+    engine.store.economics("finish", rid)
     return {"request_id": rid, "results": report, "costs": engine.store.costs(rid), "limitations": "Java/Kotlin compile and semantic design grading require configured external harnesses. Tool protocol behavior is covered by integration tests; this prompt checks schema only."}

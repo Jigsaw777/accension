@@ -6,14 +6,91 @@ from .config import load, Repository
 from .schema import Request
 from .engine import Engine
 
-def output(value):
-    print(json.dumps(value, indent=2, default=str))
+def output(value, json_output=False):
+    from .cli_output import human
+    print(json.dumps(value, indent=2, default=str) if json_output else human(value))
 
 async def dispatch(args, settings):
     engine = Engine(settings)
     try:
+        from .management import Management
+        management = Management(engine)
+        if args.command in {"run", "execute", "resume"}:
+            from .cli_output import progress
+            def observe(event):
+                message = progress(event)
+                if message:
+                    print(message, file=sys.stderr, flush=True)
+            engine.store.trace_listener = observe
+        from .cli_commands import dispatch as dispatch_new, UNHANDLED
+        result = await dispatch_new(args, engine, management)
+        if result is not UNHANDLED:
+            return result
         if args.command == "route":
-            return await engine.route(args.task)
+            return await engine.route(args.task, repo_path=args.repo)
+        if args.command == "config":
+            if args.action == "migrate":
+                from .migration import migrate_files
+                return migrate_files(settings.home)
+            if args.action == "export":
+                profile = management.export_profile()
+                if args.file:
+                    Path(args.file).write_text(json.dumps(profile, indent=2)+"\n", encoding="utf-8")
+                    return {"exported": str(Path(args.file).resolve())}
+                return profile
+            if args.action == "import":
+                if not args.file:
+                    raise ValueError("Use --file for a declarative routing profile")
+                return management.import_profile(json.loads(Path(args.file).read_text(encoding="utf-8")))
+            return {"valid": True, "schema_version": 2, "models": len(settings.models), "providers": len(settings.providers)}
+        if args.command == "provider":
+            if args.action == "list":
+                return management.providers()
+            if not args.name:
+                raise ValueError("Provider name required")
+            if args.action == "test":
+                from .conformance import check_provider
+                return await check_provider(engine, args.name, args.inference, args.budget, args.allow_paid)
+            if not args.kind:
+                raise ValueError("Use --kind with a built-in or enabled provider plugin")
+            fields = {}
+            for item in args.field:
+                key, value = item.split("=", 1)
+                try:
+                    fields[key] = json.loads(value)
+                except ValueError:
+                    fields[key] = value
+            if args.endpoint:
+                fields["endpoint"] = args.endpoint
+            import getpass
+            secret = getpass.getpass("Provider API key (stored in OS vault): ") if args.api_key else None
+            return management.connect(args.name, args.kind, fields, secret)
+        if args.command == "role":
+            if args.action == "list":
+                return engine.router.roles.all()
+            if not args.name:
+                raise ValueError("Role name required")
+            return management.set_role(args.name, {"strategy": args.strategy, "model": args.model, "locality": args.locality, "minimum_quality": args.minimum_quality})
+        if args.command == "profiles":
+            return await management.action("profiles-reset", {})
+        if args.command == "integration":
+            from .integrations import preview, install
+            quote = preview(engine, args.client)
+            return install(engine, quote["id"]) if args.action == "install" else quote
+        if args.command == "recovery":
+            from .recovery import list_runs, recover
+            if args.action == "list":
+                return list_runs(engine)
+            if not args.plan_id:
+                raise ValueError("Plan ID required")
+            return await recover(engine, args.plan_id, args.action)
+        if args.command == "repo":
+            if args.action == "list":
+                return [r.model_dump() for r in settings.repositories]
+            if not args.path:
+                raise ValueError("Repository path required")
+            commands = {name: json.loads(argv) for name, argv in (item.split("=", 1) for item in args.check)}
+            return management.register_repository(args.path, args.privacy or ("CLOUD_ALLOWED" if args.allow_cloud else "LOCAL_ONLY"), commands, args.never_send)
         if args.command == "discover":
             return await engine.discovery.refresh(force=True)
         if args.command in ("run", "plan"):
@@ -36,53 +113,59 @@ async def dispatch(args, settings):
             if args.action == "clear":
                 engine.store.clear_cache()
             return engine.store.cache_stats()
-        if args.command in ("eval", "calibrate"):
+        if args.command == "calibrate":
+            from .calibration import preview, run
+            if args.action == "run":
+                if not args.quote_id:
+                    raise ValueError("Use --quote-id from a calibration preview")
+                return await run(engine, args.quote_id, args.allow_paid)
+            return preview(engine, args.model, args.budget)
+        if args.command == "eval":
             from .evaluation import evaluate
-            return await evaluate(engine, args.budget, args.model, args.command == "calibrate")
+            return await evaluate(engine, args.budget, args.model, False)
     finally:
         await engine.close()
 
-def parser():
-    p = argparse.ArgumentParser(prog="router", description="Local cost-aware gateway and task DAG executor")
-    p.add_argument("--home", default=os.getenv("ROUTER_HOME"))
-    p.add_argument("--mock", action="store_true", help="Use only explicit deterministic fixture models")
-    sub = p.add_subparsers(dest="command", required=True)
-    serve = sub.add_parser("serve"); serve.add_argument("--port", type=int); serve.add_argument("--host")
-    for name in ["stop", "status", "doctor", "models", "costs", "mcp", "enroll", "discover", "azure-login"]:
-        sub.add_parser(name)
-    for name in ["route", "run", "plan"]:
-        cmd = sub.add_parser(name); cmd.add_argument("task")
-        if name != "route":
-            cmd.add_argument("--repo", required=True); cmd.add_argument("--budget", type=float)
-            cmd.add_argument("--constraint", action="append", default=[]); cmd.add_argument("--session", default="default")
-    cmd = sub.add_parser("execute"); cmd.add_argument("plan_id"); cmd.add_argument("--repo", required=True)
-    cmd = sub.add_parser("trace"); cmd.add_argument("request_id")
-    cmd = sub.add_parser("cache"); cmd.add_argument("action", choices=["stats", "clear"])
-    cmd = sub.add_parser("config"); cmd.add_argument("action", choices=["validate"])
-    cmd = sub.add_parser("repo"); cmd.add_argument("action", choices=["add", "list"]); cmd.add_argument("path", nargs="?")
-    cmd.add_argument("--check", action="append", default=[], help='Trusted NAME=JSON_ARGV, e.g. tests=["{python}","-m","unittest","discover"]')
-    cmd.add_argument("--allow-cloud", action="store_true")
-    for name in ["eval", "calibrate"]:
-        cmd = sub.add_parser(name); cmd.add_argument("--budget", type=float, default=0); cmd.add_argument("--model")
-    cmd = sub.add_parser("demo"); cmd.add_argument("--repo")
-    return p
+from .cli_parser import parser
 
-def main():
-    args = parser().parse_args()
+def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    args = parser().parse_args(argv)
     try:
+        if args.command == "version":
+            from . import __version__
+            output({"product": "Accension", "version": __version__, "aliases": ["accension", "router"]}, args.json)
+            return
+        if args.command == "completion":
+            from .cli_parser import completion
+            output(completion(args.shell), args.json)
+            return
         settings = load(args.home, args.mock)
-        if args.command == "config":
-            output({"valid": True, "models": len(settings.models), "providers": len(settings.providers)})
-        elif args.command == "azure-login":
+        if args.port:
+            settings.port = args.port
+        if args.host:
+            settings.host = args.host
+        if getattr(args, "remote", False) or getattr(args, "auth_token_env", None):
+            raise ValueError("Remote binding is not supported in this release. Use loopback with an authenticated SSH tunnel; no anonymous remote mode exists.")
+        from .config import Settings
+        settings = Settings.model_validate(settings.model_dump())
+        if args.command == "azure-login":
             from .azure_auth import login
-            output(login(settings))
-        elif args.command == "serve":
+            output(login(settings), args.json)
+        elif args.command in {"serve", "ui"}:
             import uvicorn
             from .app import create_app
-            if args.port: settings.port = args.port
-            if args.host: settings.host = args.host
+            if args.command == "ui":
+                from .launcher import existing_ui
+                if existing_ui(settings, args.no_browser):
+                    return
             app = create_app(settings)
-            server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False, log_level="warning"))
+            if args.command == "ui":
+                from .launcher import launch
+                launch(app, settings, args.no_browser)
+            server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, access_log=False, log_level="warning", proxy_headers=False))
             app.state.server = server
             (settings.state/"server.pid").write_text(str(os.getpid()))
             try:
@@ -96,28 +179,31 @@ def main():
             import uvicorn
             from .enroll import create_enrollment
             uvicorn.run(create_enrollment(settings), host="127.0.0.1", port=8766, access_log=False, log_level="warning")
-        elif args.command in ("status", "stop"):
-            with httpx.Client(trust_env=False, timeout=3) as client:
-                url = f"http://127.0.0.1:{settings.port}"
-                response = client.get(url+"/health") if args.command == "status" else client.post(url+"/router/stop", headers={"Authorization": "Bearer "+settings.token})
-                response.raise_for_status(); output(response.json())
-        elif args.command == "repo":
-            if args.action == "list":
-                output([r.model_dump() for r in settings.repositories]); return
-            if not args.path:
-                raise ValueError("Repository path required")
-            path = Path(args.path).resolve(strict=True)
-            if path == Path.home() or path == Path(path.anchor) or not path.is_dir():
-                raise ValueError("Register a specific project directory")
-            checks = dict(item.split("=", 1) for item in args.check)
-            commands = {name: json.loads(argv) for name,argv in checks.items()}
-            from .safety import validation_argv
-            for name in commands:
-                validation_argv(commands, name)
-            repo = Repository(path=str(path), validation=commands, allow_cloud=args.allow_cloud)
-            repos = [r for r in settings.repositories if Path(r.path).resolve() != path]+[repo]
-            (settings.home/"config/repositories.yaml").write_text(yaml.safe_dump({"repositories": [r.model_dump() for r in repos]}, sort_keys=False))
-            output({"registered": str(path), "checks": list(commands), "allow_cloud": args.allow_cloud})
+        elif args.command in ("start", "restart", "status", "stop"):
+            from . import service
+            if args.command == "restart":
+                service.stop(settings)
+                value = service.start(settings)
+            else:
+                value = getattr(service, args.command)(settings)
+            if args.command == "status":
+                from .store import Store
+                from .savings import SavingsEngine
+                store = Store(settings)
+                try:
+                    store.savings = SavingsEngine(store)
+                    value["savings_today"] = store.economics("summary")
+                finally:
+                    store.close()
+            output(value, args.json)
+            if args.command == "status" and not value["running"]:
+                raise SystemExit(6)
+        elif args.command == "launch":
+            from .integrations import launch
+            result = launch(settings, args.client, args.direct, args.arguments, args.dry_run)
+            output(result, args.json)
+            if result.get("exit_code"):
+                raise SystemExit(result["exit_code"])
         elif args.command == "demo":
             path = Path(args.repo or settings.home/"examples/demo-repo").resolve()
             path.mkdir(parents=True, exist_ok=True)
@@ -129,15 +215,22 @@ def main():
                     return await engine.run(Request(task="Add a greeting feature with named and blank input tests and usage documentation", repo_path=str(path)))
                 finally:
                     await engine.close()
-            output(asyncio.run(demo()))
+            output(asyncio.run(demo()), args.json)
         else:
-            output(asyncio.run(dispatch(args, settings)))
+            output(asyncio.run(dispatch(args, settings)), args.json)
     except KeyboardInterrupt:
         raise SystemExit(130)
     except Exception as exc:
         from .safety import redact
-        print(json.dumps({"error": redact(str(exc)), "type": type(exc).__name__}), file=sys.stderr)
-        raise SystemExit(1)
+        from .cli_output import exit_code
+        from pydantic import ValidationError
+        message = "; ".join(".".join(str(part) for part in error["loc"]) + ": " + error["type"] for error in exc.errors()) if isinstance(exc, ValidationError) else redact(str(exc))
+        code = exit_code(exc)
+        print(json.dumps({"error": message, "type": type(exc).__name__, "exit_code": code}) if args.json else f"Error: {message}\nUse accs {args.command} --help for accepted inputs.", file=sys.stderr)
+        if args.debug:
+            import traceback
+            print(redact("".join(traceback.format_exception(type(exc), exc, exc.__traceback__))), file=sys.stderr)
+        raise SystemExit(code)
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,1 @@
+Summarize recorded facts: files, validation outcomes, models, costs, cache savings and remaining risks. Never infer success from model confidence.

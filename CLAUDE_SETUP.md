@@ -1,17 +1,28 @@
 # Claude setup
 
-The installer preserves existing servers and preferences while adding stdio `local-ai-router` to `%APPDATA%/Claude/claude_desktop_config.json` and user `~/.claude.json` for Claude Code. It appends routing guidance to `~/.claude/CLAUDE.md`. Claude Desktop instructions are also supplied in `docs/CLIENT_INSTRUCTIONS.md`; add them to the relevant project instructions when appropriate.
+## Companion MCP
 
-Restart Claude Desktop after the configuration change. Its MCP server delegates repository work; it does not replace Claude Desktop's underlying model transport. Use Claude Code `mcp get local-ai-router` to verify connectivity.
-
-```powershell
-rtk proxy claude mcp get local-ai-router
-rtk proxy .\scripts\claude-router.cmd
-rtk proxy .\scripts\claude-direct.cmd
+```sh
+accs integrate claude-desktop --mode companion
+accs integrate claude-code --mode companion
+accs integrate claude-code --mode companion --apply
+accs integrate undo claude-code
 ```
 
-`claude-router` sets the supported `ANTHROPIC_BASE_URL`, local auth token and virtual model aliases in a child PowerShell environment. It requires an enabled Anthropic Messages-compatible provider. Foundry OpenAI deployments are not automatically Messages-compatible. See [Claude Code LLM gateway documentation](https://code.claude.com/docs/en/llm-gateway).
+Apply only the client used. Installation preserves unrelated settings, checks for concurrent edits and backs up the target. Restart the client afterward. MCP keeps the local-ai-router name and delegates registered repository work without replacing Claude's host model/account.
 
-`claude-direct` clears the router-specific gateway variables for its child process and runs normal Claude Code. Parent environment and default client configuration remain intact. The live gateway profile was generated but not exercised against a paid Anthropic deployment. MCP protocol and full orchestration are covered by local mock tests.
+## Claude Code gateway
 
-External configuration backups use the same installation manifest described in CODEX_SETUP.md. The uninstall script refuses to overwrite configuration changed since installation.
+```sh
+accs start --background
+accs integrate claude-code --mode sovereign
+accs launch claude --dry-run
+accs launch claude
+accs launch claude --direct
+```
+
+The launcher checks installed CLI capabilities and supplies process-scoped ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN and model aliases for the local gateway. An eligible Messages-compatible downstream provider is required. Claude Code retains its tools and permission model; Accension routes inference. The launcher does not alter the global shell environment or saved provider account.
+
+The base-URL/bearer-token mechanism follows [Claude Code's gateway documentation](https://code.claude.com/docs/en/llm-gateway-connect). Environment-only routing is scoped to the launched process; independent editors/background supervisors can use different settings. This release does not promise automatic routing of every Claude surface.
+
+Claude Desktop Sovereign requests explicitly fall back to Companion MCP; transport replacement is not verified. Mock Messages/tools/SSE tests and capability detection do not certify live paid client behavior. Register roots/checks before repository delegation. [Modes](docs/MODES.md) and [MCP](MCP.md) describe the boundary.

@@ -1,22 +1,21 @@
 from __future__ import annotations
-import asyncio, json, re
+import asyncio, json, os
+from typing import Protocol
 from .schema import Classification, Arbitration
 from .providers import ProviderError, estimate_cost, parse_json
 from .store import cache_key
+from .decision import LocalDecisionEngine, ArbitrationPolicy, deterministic
+from .roles import RoleResolver
+from .privacy import allowed_provider
+from .migration import classifier_reason
 
-def deterministic(task: str) -> Classification:
-    text = task.lower()
-    critical = bool(re.search(r"security|credential|authenticat|migration|concurren|race condition|deadlock|encrypt", text))
-    architecture = bool(re.search(r"architect|multi.module|across|redesign|feature|api.*database", text))
-    simple = bool(re.search(r"typo|rename|format|documentation|explain|unit test", text))
-    family = "critical" if critical else "architecture" if architecture else "explanation" if "explain" in text else "simple" if simple else "coding"
-    return Classification(task_family=family, complexity=80 if architecture or critical else 10 if simple else 35,
-                          risk=85 if critical else 45 if architecture else 10 if simple else 25,
-                          planning_required=architecture or critical, requires_frontier_planner=architecture or critical,
-                          recommended_tier=4 if architecture or critical else 1, confidence=.9 if simple or critical else .7,
-                          estimated_files=8 if architecture else 1, reason_codes=["DETERMINISTIC_PRIOR"])
 
-class LayaClient:
+class SemanticClassifier(Protocol):
+    async def classify(self, text: str) -> dict: ...
+    async def close(self) -> None: ...
+
+
+class MCPSemanticClassifier:
     """One lazily started MCP child; its heavy checkpoint is reused between requests."""
     def __init__(self, policy):
         self.policy = policy
@@ -26,7 +25,8 @@ class LayaClient:
     async def _serve(self):
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
-        params = StdioServerParameters(command=self.policy.laya_command, args=self.policy.laya_args)
+        env = {k: v for k, v in os.environ.items() if not any(word in k.lower() for word in ("api_key", "secret", "token", "password", "credential"))}
+        params = StdioServerParameters(command=self.policy.classifier_command, args=self.policy.classifier_args, env=env)
         try:
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -36,7 +36,7 @@ class LayaClient:
                         if future.cancelled():
                             continue
                         try:
-                            result = await session.call_tool(self.policy.classifier_tool, {"state": {"request": state[:3000]}, "min_confidence": self.policy.laya_confidence_threshold,
+                            result = await session.call_tool(self.policy.classifier_tool, {"state": {"request": state[:3000]}, "min_confidence": self.policy.classifier_confidence_threshold,
                                 "schema": {"type": "object", "properties": {"task_family": {"type": "string", "enum": ["simple", "coding", "architecture", "critical", "explanation"]},
                                 "planning_required": {"type": "boolean"}, "complexity": {"type": "integer", "minimum": 0, "maximum": 100}, "risk": {"type": "integer", "minimum": 0, "maximum": 100}}}})
                             data = json.loads(next(x.text for x in result.content if x.type == "text"))
@@ -51,14 +51,14 @@ class LayaClient:
             while not self.queue.empty():
                 _, future = self.queue.get_nowait()
                 if not future.done():
-                    future.set_exception(ProviderError("Laya unavailable"))
+                    future.set_exception(ProviderError("Optional classifier unavailable"))
 
     async def classify(self, text):
         if not self.task or self.task.done():
             self.task = asyncio.create_task(self._serve())
         future = asyncio.get_running_loop().create_future()
         self.queue.put_nowait((text, future))
-        return await asyncio.wait_for(future, self.policy.laya_timeout)
+        return await asyncio.wait_for(future, self.policy.classifier_timeout)
 
     async def close(self):
         if self.task:
@@ -68,23 +68,39 @@ class LayaClient:
 class Router:
     def __init__(self, settings, store, providers):
         self.settings, self.store, self.providers = settings, store, providers
-        self.laya = LayaClient(settings.routing)
+        self.classifier = MCPSemanticClassifier(settings.routing)
+        self.decision_engine = LocalDecisionEngine()
+        self.arbitration = ArbitrationPolicy(settings.routing)
+        self.roles = RoleResolver(settings, store, providers)
 
-    async def classify(self, task, request_id):
-        key = cache_key("classification-v1", task, self.settings.fingerprint())
+    @property
+    def laya(self):
+        """Deprecated V1 Python alias."""
+        return self.classifier
+
+    async def classify(self, task, request_id, graph=None):
+        key = cache_key("classification-v2", task, self.settings.fingerprint(), getattr(graph, "fingerprint", None))
         cached = self.store.get(key)
         if cached:
             self.store.trace(request_id, "classification_cache", hit=True)
             return Classification.model_validate(cached)
-        decision = deterministic(task)
+        decision = self.decision_engine.decide(task, graph)
         policy = self.settings.routing
-        if policy.laya_enabled and policy.laya_command and decision.task_family not in {"simple", "explanation"}:
+        role = self.settings.roles.get("classifier")
+        if policy.classifier_enabled and (not role or role.strategy != "disabled") and decision.task_family not in {"simple", "explanation"}:
             try:
-                data = await self.laya.classify(task)
+                if policy.classifier_command:
+                    data = await self.classifier.classify(task)
+                else:
+                    candidates, _ = self.roles.select(decision, "classifier", budget=self.settings.budgets.default_request_budget, inputs=1500, outputs=256)
+                    if not candidates:
+                        raise ProviderError("No eligible optional classifier")
+                    result = await self.providers.generate(candidates[0], [{"role": "system", "content": 'Classify the task. Return JSON {"values":{"task_family":"simple|coding|architecture|critical|explanation","complexity":0,"risk":0,"planning_required":false},"confidence":{"classification":0.0}}. Scores 0-100, confidence 0-1.'}, {"role": "user", "content": task[:3000]}], "classifier", request_id, "classification", self.settings.budgets.default_request_budget, max_output=256)
+                    data = parse_json(result.text)
                 values, confidences = data["values"], data["confidence"]
                 confidence = min(confidences.values())
-                if confidence >= policy.laya_confidence_threshold and all(v is not None for v in values.values()):
-                    candidate = Classification.model_validate({**decision.model_dump(), **values, "confidence": confidence, "reason_codes": ["LAYA_ACCEPTED"]})
+                if confidence >= policy.classifier_confidence_threshold and all(v is not None for v in values.values()):
+                    candidate = Classification.model_validate({**decision.model_dump(), **values, "confidence": confidence, "reason_codes": classifier_reason("ACCEPTED"), "decision_source": decision.decision_source + ["optional_local_classifier"]})
                     # A classifier cannot downgrade deterministic critical risk.
                     if decision.task_family == "critical":
                         candidate.risk = max(candidate.risk, decision.risk)
@@ -92,60 +108,55 @@ class Router:
                         candidate.planning_required = True
                     decision = candidate
                 else:
-                    decision.reason_codes.append("LAYA_ABSTAINED")
+                    decision.reason_codes.extend(classifier_reason("ABSTAINED"))
             except Exception:
-                decision.reason_codes.append("LAYA_TIMEOUT_OR_UNAVAILABLE")
+                decision.reason_codes.extend(classifier_reason("TIMEOUT_OR_UNAVAILABLE"))
         decision.requires_frontier_planner = decision.complexity >= policy.frontier_planner_complexity_threshold
         decision.planning_required |= decision.requires_frontier_planner
         self.store.trace(request_id, "classification", **decision.model_dump())
         self.store.put(key, decision.model_dump())
         return decision
 
-    def needs_jev(self, c, failures=0):
-        p = self.settings.routing
-        return c.confidence < p.laya_confidence_threshold or c.risk >= p.jev_risk_threshold or c.task_family in {"architecture", "critical"} or failures >= 2
+    def needs_arbiter(self, c, failures=0):
+        return self.arbitration.needed(c, failures)
 
-    async def arbitrate(self, c, request_id, session, budget, candidates, failures=0):
-        if not self.needs_jev(c, failures):
+    def needs_jev(self, c, failures=0):
+        """Deprecated V1 Python alias."""
+        return self.needs_arbiter(c, failures)
+
+    async def arbitrate(self, c, request_id, session, budget, candidates, failures=0, allow_cloud=True):
+        if not self.needs_arbiter(c, failures):
             return None
-        model = next((m for m in self.settings.models if m.id == self.settings.routing.jev_model and m.enabled), None)
+        role_policy = self.settings.roles.get("arbiter")
+        if role_policy and role_policy.strategy == "disabled":
+            return None
+        configured = (role_policy.model if role_policy else None) or self.settings.routing.arbiter_model
+        eligible, _ = self.roles.select(c, "arbiter", ["text", "structured_output"], allow_cloud=allow_cloud, budget=budget)
+        model = next((m for m in eligible if m.id == configured), None)
+        if model and not allowed_provider(self.settings, self.settings.providers[model.provider], "arbiter", allow_cloud):
+            self.store.trace(request_id, "arbitration", status="deterministic", reason_code="LOCAL_CONTROL_POLICY")
+            return None
         if model is None:
-            self.store.trace(request_id, "jev", status="unavailable", reason_code="NO_CONFIGURED_DEPLOYMENT")
-            if c.risk >= self.settings.routing.jev_risk_threshold and self.settings.routing.require_jev_for_critical:
-                raise ProviderError("Critical work requires Jev; configure routing.jev_model or an explicit policy override")
+            self.store.trace(request_id, "arbitration", status="deterministic", reason_code="NO_CONFIGURED_ARBITER")
             return None
         payload = {"classification": c.model_dump(), "candidate_ids": [m.id for m in candidates], "failures": failures, "budget": budget}
         messages = [{"role": "system", "content": "Return routing arbitration JSON only. Schema: "+json.dumps(Arbitration.model_json_schema())}, {"role": "user", "content": json.dumps(payload)}]
-        result = await self.providers.generate(model, messages, "arbiter", request_id, session, budget, schema=Arbitration.model_json_schema())
-        decision = Arbitration.model_validate(parse_json(result.text))
+        from .store import BudgetExceeded
+        try:
+            result = await self.providers.generate(model, messages, "arbiter", request_id, session, budget, schema=Arbitration.model_json_schema())
+            decision = Arbitration.model_validate(parse_json(result.text))
+        except (ProviderError, ValueError, BudgetExceeded) as exc:
+            self.store.trace(request_id, "arbitration", status="deterministic", reason_code="OPTIONAL_ARBITER_UNAVAILABLE", error_type=type(exc).__name__)
+            return None
         if decision.model_id and decision.model_id not in payload["candidate_ids"]:
-            raise ProviderError("Jev selected an ineligible model")
-        self.store.trace(request_id, "jev", **decision.model_dump())
+            raise ProviderError("Arbiter selected an ineligible model")
+        self.store.trace(request_id, "arbitration", **decision.model_dump())
         if decision.reason_code in {"NEEDS_HUMAN_APPROVAL", "STOP_ESCALATION"}:
             raise ProviderError(decision.reason_code)
         return decision
 
-    def candidates(self, c, role="executor", capabilities=None, allow_cloud=True, excluded=None, min_tier=1, max_tier=4):
-        p = self.settings.routing
-        candidates = []
-        for m in self.settings.models:
-            provider = self.settings.providers[m.provider]
-            if not m.enabled or not provider.enabled or role not in m.roles or not min_tier <= m.tier <= max_tier:
-                continue
-            if m.id in (excluded or set()) or not self.store.healthy(m.id) or (not allow_cloud and not provider.local):
-                continue
-            if not m.supports(capabilities or []) or m.input_price is None or m.output_price is None:
-                continue
-            if role == "planner" and p.planner_model_candidates and m.id not in p.planner_model_candidates:
-                continue
-            quality = self.store.quality(m, c.task_family)
-            slo = p.quality_slos.get(c.task_family, .92)
-            if quality < slo and not p.allow_below_slo:
-                continue
-            cost = estimate_cost(m, 2000, 2000)
-            utility = quality - p.cost_weight*cost - p.latency_weight*min(m.expected_latency/180,1) - p.failure_risk_weight*(1-quality)
-            utility += p.local_execution_bonus if p.local_first and provider.local else 0
-            candidates.append((m, cost, utility))
-        # Quality is a gate, cost is primary; utility resolves equal-cost candidates.
-        candidates.sort(key=lambda x: (x[1], -x[2]))
-        return [m for m, _, _ in candidates]
+    def candidates(self, c, role="executor", capabilities=None, allow_cloud=True, excluded=None, min_tier=1, max_tier=4, **kwargs):
+        return self.roles.select(c, role, capabilities or [], allow_cloud, excluded, min_tier, max_tier, **kwargs)[0]
+
+
+LayaClient = MCPSemanticClassifier  # Deprecated import alias.

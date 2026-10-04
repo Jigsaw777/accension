@@ -1,31 +1,44 @@
 # Routing policy
 
-Policy is in `config/routing.yaml`; budgets in `config/budgets.yaml`. All prices are USD per million tokens. A deployment must be enabled, healthy, permitted for its role and repository, capability-compatible, priced, and above the task-family quality threshold before cost ranking. Unknown price is ineligible, never free.
+LocalDecisionEngine classifies without inference, using the requested operation, request size, repository files/imports/tests, risk signals and historical failures. It produces complexity, risk, confidence, required capabilities and planning depth: NONE, MICRO_PLAN, IMPLEMENTATION_PLAN or FULL_ARCHITECTURE_PLAN.
 
-Simple edits and explanations use a deterministic fast path. Other tasks can use lazy local Laya, with a two-second request deadline and deterministic fallback. Its process survives requests in the gateway and MCP server; its first prediction may finish after that deadline. Cache keys include policy. A high-confidence classification cannot downgrade deterministic critical risk. Laya estimates are routing inputs, not verified facts.
+`router route "TASK" --repo PATH` and Playground simulate routing without model calls or edits. Results show role choices, rejection reasons, fallback edges and estimated costs. These are observable decisions, not private model reasoning.
 
-Jev is an optional configured model alias (`jev_model`), not an invented provider/model name. Low confidence, high risk, architectural work or repeated failures trigger arbitration when available. Critical work currently requires it. Jev can select only eligible candidates. It cannot override monetary reservations or authorize protected actions. A missing Jev is reported; no silent substitute is installed.
+## Generic roles
 
-Quality thresholds: simple/explanation 0.85, coding 0.92, architecture 0.96, critical 0.98. Tiers 1–4 are operator/discovery metadata, not inferred marketing rankings. Cost is primary among qualified candidates; locality, latency and utility break ties. New deployments need suitable quality priors or evaluation evidence before they qualify for demanding work. Gradual observed outcomes can adjust task-family scores; they do not prove semantic correctness.
+Classifier, arbiter, planner, executor, fast_executor, complex_executor, reviewer, repairer, compactor, summarizer, embedding and vision accept `auto`, `preferred`, `pinned` or `disabled` policies. Locality and minimum quality are configurable. Unavailable pins fall back with an explanation; pins never bypass safety gates.
 
-```mermaid
-flowchart TD
-    A[Worker attempt] --> B{Registered tests pass?}
-    B -->|yes| C[Optional risk-based review]
-    C --> D[Complete task]
-    B -->|no| E[Same-model bounded repair]
-    E --> F{Still failing?}
-    F -->|no| D
-    F -->|yes| G[Next qualified candidate or one higher tier]
-    G --> H{Frontier required?}
-    H -->|yes| I[Jev justification plus frontier cap]
-    H -->|no| J[Retry only failed task]
-    I --> J
-    J --> K[Stop at attempt or budget limit]
-```
+Eligibility checks capabilities, privacy, status, protocol, context, health/cooldown, resources, pricing, quality and budget. Useful cost/quality/latency candidates are compared after constraints. A tier alone neither qualifies nor excludes a model.
 
-Default limits: $0.50/request, $3/session, $3 daily soft warning, $5 daily hard limit, $0.20 planning, $0.25 execution, $0.05 verification. At most two frontier calls and one initial frontier plan per request. The session default is shared across CLI requests; use `--session NAME` for a distinct effort. Session totals do not expire automatically. A request cannot increase configured caps by supplying a larger budget.
+The semantic classifier is optional and disabled by default. If unavailable or low-confidence, deterministic classification continues. The optional arbiter obeys the same role and repository privacy gates. `control_plane.routing_location: local-only` forbids remote classifier/arbiter calls even when cloud execution is allowed. Hybrid requires an explicit policy change.
 
-SQLite `BEGIN IMMEDIATE` reserves worst-case cost before inference. Missing usage and uncertain timeouts keep their reservation because the upstream may still charge. Returned usage settles estimates; this is not an invoice. Explicit prompt caching requires an explicit write price. Hosted tool charges and asynchronous background inference are rejected by the gateway. One completion per request is allowed. Context budgeting uses a conservative byte bound for unknown tokenizers.
+## Presets
 
-The evaluator covers 14 workload categories, but Python syntax/schema checks are not semantic benchmarks. Java/Kotlin compilation requires a future external harness. `eval` defaults to zero paid calls; a positive budget explicitly permits calls, still constrained by global limits. `calibrate` updates only objective exact/finding checks; broad performance claims require representative real tests.
+| Preset | Behavior |
+|---|---|
+| Balanced | Moderate quality targets and local preference |
+| Maximum Savings | Lower configurable floors and stronger local preference |
+| Quality First | Higher quality floors and less local preference |
+| Fully Local | Blocks built-in cloud inference, auth and metadata |
+| Local Control + Cloud Compute | Local decisions; cloud work only under repository policy |
+| Custom | Explicit typed settings |
+
+Presets compile into normal policy fields and never override repository restrictions. Quality values are estimates of task success, not guarantees.
+
+## Calibration and learning
+
+Quick calibration uses up to three models and eleven short fixtures by default: classification, JSON/schema, coding, tests, debugging, architecture, review, tools, instructions, summarization and repository reasoning. Exact answers, JSON shape and AST properties are checked; generated code is not executed during calibration. This provides initial evidence, not comprehensive certification.
+
+Preview with `router calibrate preview`, inspect the maximum quote, then run with `--quote-id`. Cloud runs require `--allow-paid`. Default budget: USD 0.05. Quotes include protocol/schema overhead, and calls still obey request/session/daily reservations. Unknown cloud prices block calibration.
+
+Real outcomes update model-by-task-family success, latency, token use and cost history. Failures can reduce confidence after good calibration. `router profiles reset` clears learned profiles independently from the exact cache.
+
+## Execution and costs
+
+The planner is an eligible model meeting task requirements, not necessarily the most expensive model. Small work uses a shallow plan. A single model may plan and execute while deterministic registered checks provide verification.
+
+Workers receive bounded context and acceptance criteria. Malformed structured output goes through deterministic extraction, bounded formatting repair when eligible, then normal fallback. Review/repair and uncertain charges count against the affected task. Escalation changes the failing node rather than the entire plan.
+
+Optional context is reduced and dependency output compacted before larger-context fallback. Automatic semantic task splitting for every overflow is not implemented; a protected target that cannot fit fails clearly.
+
+Request, session and hard daily limits use transactional reservations. Ambiguous failures retain reservations because the provider may have billed them. Displayed dollars are estimates, not invoices. Savings are not claimed without a defined counterfactual baseline.

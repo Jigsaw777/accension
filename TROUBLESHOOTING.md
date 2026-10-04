@@ -1,32 +1,42 @@
 # Troubleshooting
 
-Run `rtk proxy .\scripts\router.cmd doctor` first. Exit success means the diagnostic completed; inspect unavailable services in its JSON. It does not mean every provider is usable.
+Start with `router doctor` and System. Doctor does not invoke paid inference. Keep diagnostics private if they contain local paths or model identifiers.
 
-| Symptom | Cause and next action |
+| Symptom | Next action |
 |---|---|
-| No eligible planner/worker | Check provider enabled state, capability flags, prices, family quality priors, repository cloud permission and health circuit. Do not lower quality gates merely to force a route. |
-| Microsoft says no access | The app/device-code flow may lack tenant permission. Browser portal sign-in does not supply application credentials. Use a tenant-approved application/authentication method; do not repeatedly retry the denied flow. |
-| Foundry inventory login required | Configure authorized ARM credentials; inference API keys alone do not authorize ARM deployment listing. |
-| Future deployment listed but ineligible | Supply verified prices/capabilities or fleet defaults; discovery deliberately avoids inventing them. |
-| Qwen unavailable | Check whether your configured local model endpoint is running. Start its existing launcher when hardware/RAM policy permits; the router does not download or load it. |
-| Critical task requires Jev | Configure an actual arbiter deployment or intentionally revise policy after reviewing the risk. No arbiter is configured by default. |
-| Laya timeout | First load or CPU inference exceeded the 2-second routing deadline. The long-lived server keeps its child warm; deterministic fallback remains active. |
-| Repository not registered | Add the exact root and independent validation commands in repositories.yaml, then restart the server/MCP client. |
-| Stale plan | A file changed since planning. Generate a new plan; do not reuse the previous edit hashes. |
-| Budget exceeded | Inspect `costs` and `trace`; failed calls may retain conservative reservations. Session totals persist until a new session ID is used. |
-| MCP child tests hang on Windows | Child processes require isolated stdin and `CREATE_NO_WINDOW`. Covered by the full stdio regression test. |
-| Port occupied | Check `status` before starting. Stop only this service through authenticated `router stop`; do not kill unrelated processes. |
-| Client cannot see MCP tools | Restart the client and check its actual user configuration outside sandbox-redirected homes. |
+| No models / no eligible route | Connect/discover; inspect capability, quality, context, privacy and price rejection reasons |
+| Missing local runtime / empty inventory | Start your runtime and load a model explicitly; deterministic decisions still work |
+| AUTH_REQUIRED | Reconnect or refresh the native CLI/ADC/SSO session |
+| Unknown / stale price | Enter current prices, refresh metadata or explicitly permit estimates |
+| Unavailable pin | Inspect fallback/health and update renamed deployment IDs |
+| 429 / provider outage | Respect cooldown/Retry-After; eligible alternatives remain budget-bound |
+| Offline | Cached registry and local providers work; cloud-dependent work fails clearly |
+| OS vault unavailable | Unlock Keychain/Secret Service, install the vault extra or use an environment reference |
+| Port occupied | Try `router ui --port 8767`; check downstream recursion |
+| Session expired / CSRF failure | Reload /ui to bootstrap a new same-origin session; no code is needed |
+| Config changed elsewhere | Reload before saving; restart other processes after changes |
+| Database busy | Finish competing operations and retry; do not delete the database |
+| Integrity failure | Stop writers and inspect a backup; corrupted state is not silently replaced |
+| Context cannot fit | Reduce/split the task or select a larger eligible context |
+| Missing validation | Register trusted test/build/lint commands |
+| Plugin unavailable | Check entry point name, API version 1 and explicit plugins.enabled |
 
-Lifecycle commands:
+## Interrupted work
 
-```powershell
-rtk proxy powershell -NoProfile -File .\scripts\start-router.ps1
-rtk proxy .\scripts\router.cmd stop
-rtk proxy .\scripts\router.cmd status
-rtk proxy .\scripts\router.cmd trace REQUEST_ID
+```sh
+router recovery list
+router recovery inspect PLAN_ID
+router recovery resume PLAN_ID
+router recovery rollback PLAN_ID
+router recovery discard PLAN_ID
 ```
 
-The Windows helpers currently target the installed default port 8765. If you change the port, update the profile/helper URLs and reinstall autostart configuration. Start scripts use hidden windows. Server logs are `.router/server.stdout.log` and `.router/server.stderr.log`; request metadata lives in SQLite.
+Choose one action after inspection. Resume needs an exact checkpoint. Incomplete batches require rollback and replanning. Rollback preserves later user edits. Discard leaves files/backups intact. Uncertain upstream charges stay reserved.
 
-If interrupted during file replacement, inspect the repository's `.router/backups/<request-id>/journal.json` and plan. V1 refuses to resume a partially executed plan automatically. Preserve later user edits when restoring. Normal handled failures perform checked rollback.
+Bug reports should include version, OS/Python, minimal non-secret config, command and normalized error. State whether inference was live or mocked. Never attach a full private database, token, client config or source-bearing rollback directory.
+
+## Accounting and integrations
+
+Unavailable savings: select a registered cloud baseline and inspect missing price/usage or receipt accounting gaps. Negative savings are retained when retries/control overhead or the selected route exceed the estimated baseline. The costs ledger retains conservative reservations and may differ from reported-usage analytics.
+
+Use accs launch CLIENT --dry-run to inspect installed transport capabilities. Unsupported desktop surfaces fall back to Companion MCP. Resume is limited to unfinished valid checkpoints; finalized runs require a fresh plan.

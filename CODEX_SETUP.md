@@ -1,17 +1,31 @@
 # Codex setup
 
-The installer adds `mcp_servers.local-ai-router` to the existing user `~/.codex/config.toml`, preserving other entries. It appends concise routing guidance to `~/.codex/AGENTS.md`; existing personal preferences are preserved. Restart/reload Codex to expose newly registered tools. This does not change the active host model.
+## Companion MCP
 
-The optional CLI gateway profile is `~/.codex/local-ai-router.config.toml`. Installed Codex 0.159.0-alpha.12.1 uses a separate profile file with top-level settings. This matches the [current Codex profile documentation](https://learn.chatgpt.com/docs/config-file/config-advanced); do not copy legacy `[profiles.name]` examples here.
-
-```powershell
-rtk proxy .\scripts\codex-router.cmd
-rtk proxy .\scripts\codex-direct.cmd
-rtk proxy codex --profile local-ai-router mcp get local-ai-router
+```sh
+accs integrate codex --mode companion
+accs integrate codex --mode companion --apply
+accs integrate undo codex
 ```
 
-The router helper reads the local token into its child environment and selects the profile. The direct helper uses the default configuration. Existing login and normal defaults are preserved. The profile uses Responses at `http://127.0.0.1:8765/v1`; an eligible Responses deployment with appropriate tool support is required for live use.
+Preview inspects the managed mcp_servers.local-ai-router registration. Apply preserves unrelated settings, backs up the target and refuses stale or conflicting content. Undo restores only an unchanged installation. Restart/reload Codex after installation. Register repositories and trusted validation in Accension first.
 
-Check the registration with your installed Codex CLI. Live routed conversations require an eligible configured provider; the bundled tests cover mock protocol behavior. MCP orchestration is the recommended integration for this V1; native gateway conversation-state limitations are in PROVIDERS.md.
+MCP delegates authorized tasks; it does not replace the host model. Use router_info/router_status for readiness, orchestrate_feature/orchestrate_bugfix for work, and receipt for evidence.
 
-`scripts/install_clients.py` previews additions; `--apply` backs up exact prior bytes and applies user-level changes. Backups and their manifest are under `.router/integration-backups/`. To uninstall, first stop the router, then pass the installation manifest to `scripts/uninstall_clients.py`. It restores only files still matching installed hashes; later user edits are not overwritten. When moving the router, recreate its virtual environment and run `scripts/install_clients.py --replace-from OLD_ROOT --apply`. Only matching managed registrations are migrated, with backups.
+## Sovereign CLI gateway
+
+```sh
+accs start --background
+accs integrate codex --mode sovereign
+accs launch codex --dry-run
+accs launch codex
+accs launch codex --direct
+```
+
+Installed --help/--version output is checked before constructing process-scoped --config overrides. These select an Accension custom Responses provider at the loopback /v1 endpoint, an ACCS_GATEWAY_TOKEN environment reference, requires_openai_auth=false and supports_websockets=false. The launcher supplies the token only to the child process; dry-run does not print it. Sovereign --apply saves a local launcher specification, not global transport replacement.
+
+The client keeps its own tools, filesystem operations and permission model. For Accension-owned compilation use accs run or the task API. Desktop transport is unverified and should use Companion MCP. An eligible Responses-capable downstream deployment is required. Virtual IDs include accension-auto, accension-local, accension-cheap, accension-balanced, accension-quality and accension-planner.
+
+Installed capability checks and mock Responses/SSE tests do not certify every paid deployment or desktop release. Live client inference was not used for this upgrade. For syntax changes, inspect the installed CLI and [official configuration reference](https://developers.openai.com/codex/config-reference/).
+
+Legacy scripts/install_clients.py supports explicit helper/profile/instruction installation and relocation; its uninstall restores only unchanged installed files. It remains separate from the scoped integration command.

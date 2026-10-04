@@ -3,9 +3,9 @@ import asyncio, json, os, time
 from collections import deque
 import httpx
 from .schema import Model, Generation, Usage
-
-class ProviderError(RuntimeError):
-    pass
+from .errors import (ProviderError, ProviderUnavailable, ContextOverflow, RateLimited,
+                     InvalidStructuredOutput, normalize_error)
+from .privacy import guard_provider, preflight
 
 def estimate_cost(model: Model, inputs: int, outputs: int, cached: int = 0, writes: int = 0, reserve: bool = False) -> float:
     if model.input_price is None or model.output_price is None:
@@ -28,9 +28,52 @@ def parse_json(text):
     value = text.strip()
     if value.startswith("```") and value.endswith("```"):
         value = value.split("\n", 1)[1].rsplit("```", 1)[0]
-    return json.loads(value)
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        # Deterministic syntax-only repair: trailing commas and missing terminal
+        # braces. Never invent values, quotes, keys or code.
+        start = min((i for i in (value.find("{"), value.find("[")) if i >= 0), default=-1)
+        if start < 0:
+            raise InvalidStructuredOutput("Model did not return JSON") from None
+        value = value[start:]
+        stack, quoted, escaped, repaired = [], False, False, []
+        for char in value:
+            if quoted:
+                repaired.append(char)
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+                continue
+            if char == '"':
+                quoted = True
+            elif char in "{[":
+                stack.append("}" if char == "{" else "]")
+            elif char in "}]":
+                if not stack or stack.pop() != char:
+                    raise InvalidStructuredOutput("Unbalanced model JSON") from None
+                while repaired and repaired[-1].isspace():
+                    repaired.pop()
+                if repaired and repaired[-1] == ",":
+                    repaired.pop()
+            repaired.append(char)
+            if not quoted and not stack:
+                break
+        if quoted:
+            raise InvalidStructuredOutput("Truncated JSON string") from None
+        try:
+            return json.loads("".join(repaired) + "".join(reversed(stack)))
+        except json.JSONDecodeError:
+            raise InvalidStructuredOutput("Invalid model JSON") from None
 
 def usage_from(data):
+    if "usageMetadata" in data:
+        u = data["usageMetadata"] or {}
+        return Usage(input_tokens=u.get("promptTokenCount", 0), output_tokens=u.get("candidatesTokenCount", 0) + u.get("thoughtsTokenCount", 0),
+                     cached_tokens=u.get("cachedContentTokenCount", 0))
     u = data.get("usage") or {}
     inputs = u.get("input_tokens", u.get("prompt_tokens", 0)) or 0
     if "cache_read_input_tokens" in u or "cache_creation_input_tokens" in u:
@@ -65,117 +108,141 @@ class Providers:
         self.semaphores = {m.id: asyncio.Semaphore(m.concurrency_limit) for m in settings.models}
         self.windows = {m.id: deque() for m in settings.models}
         self.token_cache = {}
+        self.inference_limit = asyncio.Semaphore(settings.runtime.inference_concurrency)
+        self.discovery_limit = asyncio.Semaphore(settings.runtime.discovery_concurrency)
+        self.health_limit = asyncio.Semaphore(settings.runtime.health_probe_concurrency)
+        self.calibration_limit = asyncio.Semaphore(settings.runtime.calibration_concurrency)
+        from .auth import AuthManager
+        from .provider_sdk import PluginRegistry
+        self.auth = AuthManager(settings)
+        self.plugins = PluginRegistry(settings.plugins.enabled)
 
     async def close(self):
+        self.auth.close()
         await self.client.aclose()
 
+    async def acquire_slot(self, model):
+        """Streaming calls keep the global and model permit until the body closes."""
+        sem = self.semaphores.setdefault(model.id, asyncio.Semaphore(model.concurrency_limit))
+        await self.inference_limit.acquire()
+        try:
+            await sem.acquire()
+        except BaseException:
+            self.inference_limit.release()
+            raise
+        return InferencePermit(sem, self.inference_limit)
+
     async def headers(self, provider):
-        headers = {"Content-Type": "application/json", "X-Local-Router-Hop": "1"}
-        from .credentials import read_secret
-        key = read_secret(self.settings, provider.api_key_env)
-        if provider.azure_identity:
-            from .azure_auth import get_token
-            key = await asyncio.to_thread(get_token, self.settings, "https://cognitiveservices.azure.com/.default")
-        if provider.token_command:
-            cached = self.token_cache.get(provider.endpoint)
-            if cached and cached[1] > time.time():
-                key = cached[0]
-            else:
-                proc = await asyncio.create_subprocess_exec(*provider.token_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-                try:
-                    out, _ = await asyncio.wait_for(proc.communicate(), 15)
-                except BaseException:
-                    proc.kill(); await proc.wait(); raise
-                if proc.returncode:
-                    raise ProviderError("Azure token command failed; authenticate with Azure CLI")
-                key = out.decode().strip()
-                self.token_cache[provider.endpoint] = (key, time.time()+240)
-        if provider.api_key_env and not key:
-            raise ProviderError("Missing provider credential environment variable")
-        if key:
-            if provider.kind == "anthropic":
-                headers["x-api-key"] = key
-            else:
-                headers[provider.auth_header] = "Bearer " + key if provider.auth_header.lower() == "authorization" else key
-        if provider.kind == "anthropic":
-            headers["anthropic-version"] = "2023-06-01"
-        return headers
+        return await self.auth.headers(provider)
+
+    def protocol(self, provider):
+        if provider.protocol:
+            return provider.protocol
+        manifest = self.plugins.get(provider.kind).manifest()
+        legacy = {"chat": "openai_chat", "responses": "openai_responses", "messages": "anthropic_messages"}[provider.api]
+        return legacy if legacy in manifest.protocols else manifest.protocols[0]
+
+    def context(self, provider, name=None):
+        from .provider_sdk import ProviderContext
+        name = name or next((key for key, value in self.settings.providers.items() if value is provider), provider.kind)
+        return ProviderContext(name, provider, self)
 
     def _rate(self, model):
-        q, now = self.windows[model.id], time.monotonic()
+        q, now = self.windows.setdefault(model.id, deque()), time.monotonic()
         while q and q[0] < now-60:
             q.popleft()
         if len(q) >= model.rate_limit:
-            raise ProviderError("Configured requests-per-minute limit reached")
+            raise RateLimited("Configured requests-per-minute limit reached", retry_after=60 - (now-q[0]))
         q.append(now)
 
-    async def generate(self, model, messages, role, request_id, session, budget, max_output=None, schema=None, task_id=None):
+    async def generate(self, model, messages, role, request_id, session, budget, max_output=None, schema=None, task_id=None, probe=None, call_budget=None):
         provider = self.settings.providers[model.provider]
-        if not provider.enabled or not model.enabled or not self.store.healthy(model.id):
-            raise ProviderError("Provider disabled or circuit open")
+        guard_provider(self.settings, provider, role)
+        from .config import validate_endpoint
+        validate_endpoint(provider, self.settings.port)
+        messages = preflight(messages, provider)
+        from .roles import RoleResolver
+        model = RoleResolver(self.settings, self.store).priced(model)
+        if not provider.enabled or not model.enabled or model.status not in {"available", "degraded"} or not self.store.healthy(model.id):
+            raise ProviderUnavailable("Provider disabled, model unavailable or circuit open")
         maximum = min(max_output or model.max_output, model.max_output)
-        inputs = token_upper_bound(messages)
+        inputs = token_upper_bound(messages) + (token_upper_bound(schema) if schema else 0)
+        if probe:
+            inputs += 8192 if probe == "vision" else 1024
         if inputs + maximum > model.context_window:
-            raise ProviderError("Context exceeds model window (conservative token bound)")
+            raise ContextOverflow("Context exceeds model window; retrieve fewer files, split the task or select a larger context model")
         estimate = estimate_cost(model, inputs, maximum, reserve=True)
-        async with self.semaphores[model.id]:
+        if call_budget is not None and estimate > call_budget + 1e-10:
+            from .store import BudgetExceeded
+            raise BudgetExceeded("Task call budget exceeded")
+        async with self.inference_limit, self.semaphores.setdefault(model.id, asyncio.Semaphore(model.concurrency_limit)):
             self._rate(model)
-            call = self.store.reserve(request_id, session, role, model, estimate, budget)
+            call = self.store.reserve(request_id, session, role, model, estimate, budget, task_id=task_id)
             start = time.monotonic()
             try:
-                result = await self._generate(provider, model, messages, role, maximum, schema, task_id or request_id)
+                from .contracts import reserve_egress
+                reserve_egress(self.store, call, request_id, model, role, inputs)
+            except BaseException:
+                # No bytes have been transmitted: this is a safe monetary refund.
+                self.store.settle(call, 0, {}, 0)
+                raise
+            try:
+                args = (provider, model, messages, role, maximum, schema, task_id or request_id)
+                if role == "calibration":
+                    async with self.calibration_limit:
+                        result = await self._generate(*args, probe=probe) if probe else await self._generate(*args)
+                else:
+                    result = await self._generate(*args, probe=probe) if probe else await self._generate(*args)
                 u = result.usage
                 actual = estimate_cost(model, u.input_tokens, u.output_tokens, u.cached_tokens, u.cache_write_tokens) if (u.input_tokens or u.output_tokens) else estimate
                 self.store.settle(call, actual, u.model_dump(), time.monotonic()-start)
                 self.store.health_result(model.id, True)
+                self.store.provider_health(model.provider, "HEALTHY")
+                from .dna import observe
+                observe(self.store, model.id, "reliability", True, source="transport")
                 self.store.trace(request_id, "inference", role=role, model=model.id, usage=u.model_dump(), estimated_cost=actual, latency=time.monotonic()-start)
                 return result
             except BaseException as exc:
                 self.store.settle(call, None, {}, time.monotonic()-start, failed=True)
-                self.store.health_result(model.id, False)
                 if isinstance(exc, asyncio.CancelledError):
                     raise
-                # Never include upstream body, URL or request headers in errors.
-                raise ProviderError(f"Provider call failed: {type(exc).__name__}") from None
+                error = normalize_error(exc)
+                from .dna import observe
+                observe(self.store, model.id, "reliability", False, source="transport")
+                self.record_failure(model, error)
+                raise error from None
 
-    async def _generate(self, provider, model, messages, role, maximum, schema, task_id):
+    def record_failure(self, model, error):
+        self.store.health_result(model.id, False)
+        status = "AUTH_REQUIRED" if error.code == "AUTH_REQUIRED" else "RATE_LIMITED" if isinstance(error, RateLimited) else "DEGRADED"
+        self.store.provider_health(model.provider, status, getattr(error, "retry_after", self.settings.routing.circuit_cooldown), error.code)
+
+    async def _generate(self, provider, model, messages, role, maximum, schema, task_id, probe=None):
         timeout = self.settings.routing.timeouts.get(role, self.settings.routing.timeouts["local" if provider.local else "cloud"])
-        if provider.kind == "mock":
-            from .mock import generate
-            return generate(messages, role)
-        if provider.kind == "mcp":
-            data = await mcp_call(provider, provider.tool, {"task_id": task_id, "instruction": messages[0]["content"], "context": messages[-1]["content"], "max_output_tokens": min(maximum, 2048)}, timeout)
-            return Generation(text=data.get("text", data.get("output", json.dumps(data))))
-        headers = await self.headers(provider)
-        if provider.kind == "anthropic":
-            payload = {"model": model.deployment_name, "system": "\n".join(m["content"] for m in messages if m["role"] == "system"),
-                       "messages": [m for m in messages if m["role"] != "system"], "max_tokens": maximum}
-            path = "/messages"
-            if model.supports_prompt_cache and payload["system"]:
-                payload["system"] = [{"type": "text", "text": payload["system"], "cache_control": {"type": "ephemeral"}}]
-        elif provider.api == "responses":
-            payload = {"model": model.deployment_name, "input": messages, "max_output_tokens": maximum, "store": False}
-            path = "/responses"
-            if schema and model.supports_structured_output:
-                payload["text"] = {"format": {"type": "json_schema", "name": "result", "schema": schema, "strict": False}}
-            if model.supports_prompt_cache:
-                from .store import cache_key
-                payload["prompt_cache_key"] = cache_key(role, messages[0])
-        else:
-            path = "/chat/completions"
-            payload = {"model": model.deployment_name, "messages": messages, "max_tokens": maximum}
-            if schema and model.supports_structured_output:
-                payload["response_format"] = {"type": "json_object"}
-        response = await self.client.post(provider.endpoint.rstrip("/")+path, headers=headers, json=payload, timeout=timeout)
-        response.raise_for_status()
-        data = response.json()
-        if provider.kind == "anthropic":
-            text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-        elif provider.api == "responses":
-            text = "".join(b.get("text", "") for item in data.get("output", []) for b in item.get("content", []) if b.get("type") == "output_text")
-        else:
-            text = data["choices"][0]["message"].get("content") or ""
-        return Generation(text=text, usage=usage_from(data), raw=data)
+        protocol = {"responses_api": "openai_responses", "chat_completions": "openai_chat"}.get(probe, self.protocol(provider))
+        adapter = self.plugins.get(provider.kind).create_transport(protocol)
+        async with asyncio.timeout(timeout):
+            return await adapter.generate(self.context(provider, model.provider), model, messages, maximum, schema, role=role, task_id=task_id, timeout=timeout, probe=probe, protocol=protocol)
+
+    async def discover(self, name, provider):
+        guard_provider(self.settings, provider, "metadata")
+        if not provider.enabled:
+            raise ProviderUnavailable("Provider disabled")
+        async with self.discovery_limit, asyncio.timeout(self.settings.runtime.discovery_timeout):
+            return await self.plugins.get(provider.kind).discover_models(self.context(provider, name))
+
+    async def embed(self, model, texts, request_id, session, budget):
+        """Optional embedding API; lexical repository retrieval has no dependency on it."""
+        from .errors import CapabilityUnsupported
+        if not model.supports_embeddings or not isinstance(texts, list) or not 1 <= len(texts) <= 32 or any(not isinstance(text, str) or len(text) > 100000 for text in texts):
+            raise CapabilityUnsupported("Choose a verified embedding model and 1-32 bounded text inputs")
+        vectors = []
+        for text in texts:
+            result = await self.generate(model, [{"role": "user", "content": text}], "embedding", request_id, session, budget, max_output=1, probe="embeddings")
+            if not result.raw.get("probe_evidence", {}).get("embeddings"):
+                raise CapabilityUnsupported("Embedding response did not contain a finite numeric vector")
+            vectors.append(result.raw["data"][0]["embedding"] if "data" in result.raw else result.raw["embedding"]["values"])
+        return vectors
 
     async def health(self, provider):
         if not provider.enabled:
@@ -185,8 +252,19 @@ class Providers:
         if provider.kind == "mcp":
             return {"status": "configured", "check": "MCP executable only"}
         try:
-            r = await self.client.get(provider.endpoint.rstrip("/")+"/models", headers=await self.headers(provider), timeout=3)
-            r.raise_for_status()
-            return {"status": "ok", "models": [x.get("id") for x in r.json().get("data", [])]}
+            guard_provider(self.settings, provider, "metadata")
+            async with self.health_limit:
+                return await self.plugins.get(provider.kind).health(self.context(provider))
         except Exception as exc:
-            return {"status": "unavailable", "error": type(exc).__name__}
+            error = normalize_error(exc)
+            return {"status": "auth_required" if error.code == "AUTH_REQUIRED" else "unavailable", "error": error.code}
+
+
+class InferencePermit:
+    def __init__(self, *semaphores):
+        self.semaphores = semaphores
+
+    def release(self):
+        for semaphore in self.semaphores:
+            semaphore.release()
+        self.semaphores = ()

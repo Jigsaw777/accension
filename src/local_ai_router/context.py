@@ -38,20 +38,28 @@ class ContextGraph:
         self.edges = []
 
     def build(self):
+        self.files, self.edges = {}, []
+        self.cache_usage = {"hits": 0, "misses": 0}
         revision = {}
         for name in file_names(self.root):
+            if name.endswith(".axir.json"):
+                continue  # Portable compiler artifacts are not source preconditions.
             try:
                 path = safe_path(self.root, name)
                 if not path.is_file():
                     continue
                 stat = path.stat()
-                revision_key = cache_key("revision-v1", self.root, name, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
-                revision[name] = self.store.get(revision_key) or digest(path)
-                self.store.put(revision_key, revision[name])
+                # Hash preconditions must survive equal-size writes within a filesystem
+                # timestamp tick. Cache parsing by content, never trust stat as identity.
+                revision[name] = digest(path)
+                from .privacy import protected_path
+                if protected_path(name, self.repo):
+                    continue
                 if path.suffix not in EXTENSIONS or stat.st_size > self.repo.max_file_bytes:
                     continue
-                memo = cache_key("file-v1", self.root, name, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+                memo = cache_key("file-v2", self.root, name, revision[name])
                 item = self.store.get(memo)
+                self.cache_usage["hits" if item is not None else "misses"] += 1
                 if item is None:
                     text = path.read_text(encoding="utf-8")
                     if SECRET.search(text):
@@ -90,6 +98,7 @@ class ContextGraph:
                 for target in self.files:
                     if Path(target).stem == Path(name).stem.removeprefix("test_"):
                         self.edges.append({"source": name, "target": target, "relation": "covers", "confidence": "INFERRED"})
+        self.portable_fingerprint = cache_key("repository-content-v1", revision)
         self.fingerprint = cache_key("repo-v2", str(self.root), revision)
         result = {"fingerprint": self.fingerprint, "files": self.files, "edges": self.edges}
         self.store.put(cache_key("graph", str(self.root)), result)
@@ -108,6 +117,16 @@ class ContextGraph:
         raw = token_estimate(base)
         used = raw
         for name in names:
+            from .privacy import protected_path
+            from .contracts import current_contract
+            if name in current_contract().get("blocked_files", ()):
+                if name in task.expected_artifacts:
+                    raise ValueError("Cloud node cannot read an artifact from a local-only node")
+                continue
+            if protected_path(name, self.repo):
+                if name in task.expected_artifacts:
+                    raise ValueError("Edit target excluded by repository privacy policy")
+                continue
             path = safe_path(self.root, name)
             content = path.read_text(encoding="utf-8") if path.exists() else ""
             if SECRET.search(content):

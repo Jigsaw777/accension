@@ -12,43 +12,34 @@ from .providers import ProviderError
 def create_app(settings=None, engine=None):
     settings = settings or load()
     engine = engine or Engine(settings)
+    from .savings_stream import SavingsStream
+    pulse = SavingsStream(engine)
     @asynccontextmanager
     async def lifespan(app):
+        from .recovery import interrupted
+        interrupted(engine)
         watcher = asyncio.create_task(engine.discovery.watch())
+        economics = asyncio.create_task(pulse.watch())
         try:
-            yield
+            async with hub_mcp.session_manager.run():
+                yield
         finally:
             watcher.cancel()
-            await asyncio.gather(watcher, return_exceptions=True)
+            economics.cancel()
+            await asyncio.gather(watcher, economics, return_exceptions=True)
             await engine.close()
-    app = FastAPI(title="Local AI Router", version="0.1.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="Accension", version="2.0.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.engine = engine
-    token = settings.token
-
-    @app.middleware("http")
-    async def guard(request, call_next):
-        if request.headers.get("x-local-router-hop"):
-            return JSONResponse({"error": "Recursive router call refused"}, status_code=508)
-        if request.headers.get("origin"):
-            return JSONResponse({"error": "Cross-origin browser requests disabled"}, status_code=403)
-        if request.url.path not in ("/health", "/"):
-            supplied = request.headers.get("authorization", "").removeprefix("Bearer ") or request.headers.get("x-api-key", "")
-            if not secrets.compare_digest(supplied, token):
-                return JSONResponse({"error": "Unauthorized"}, status_code=401)
-        try:
-            length = int(request.headers.get("content-length", "0"))
-        except ValueError:
-            return JSONResponse({"error": "Invalid content length"}, status_code=400)
-        if length < 0 or length > 2_000_000:
-            return JSONResponse({"error": "Request too large"}, status_code=413)
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Cache-Control"] = "no-store"
-        return response
+    app.state.savings_stream = pulse
+    from .ui import install_ui
+    install_ui(app, engine)
 
     @app.exception_handler(ValueError)
     async def invalid(request, exc):
-        return JSONResponse({"error": str(exc)}, status_code=400)
+        from .safety import redact
+        from pydantic import ValidationError
+        message = "; ".join(".".join(str(x) for x in e["loc"]) + ": " + e["type"] for e in exc.errors()) if isinstance(exc, ValidationError) else redact(str(exc))
+        return JSONResponse({"error": message}, status_code=400)
 
     @app.exception_handler(ProviderError)
     async def unavailable(request, exc):
@@ -64,11 +55,11 @@ def create_app(settings=None, engine=None):
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "service": "local-ai-router", "version": "0.1.0", "mock": settings.mock}
+        return {"status": "ok", "service": "local-ai-router", "version": "2.0.0", "mock": settings.mock}
 
     @app.get("/v1/models")
     async def models():
-        return {"object": "list", "data": [{"id": m, "object": "model", "created": 0, "owned_by": "local-ai-router"} for m in ["router-auto", "router-local", "router-cheap", "router-balanced", "router-quality", "router-planner"]]}
+        return {"object": "list", "data": [{"id": prefix+name, "object": "model", "created": 0, "owned_by": "local-ai-router"} for prefix in ["accension-", "router-"] for name in ["auto", "local", "cheap", "balanced", "quality", "planner"]]}
 
     @app.post("/v1/responses")
     async def responses(request: HTTPRequest):
@@ -118,13 +109,12 @@ def create_app(settings=None, engine=None):
         return {"costs": engine.store.costs(), "cache": engine.store.cache_stats(), "profiles": profiles,
                 "recent": [dict(r) for r in rows], "models": [{"id": m.id, "enabled": m.enabled, "healthy": engine.store.healthy(m.id)} for m in settings.models]}
 
-    @app.get("/")
-    async def home():
-        return HTMLResponse('''<!doctype html><meta charset="utf-8"><title>Local AI Router</title>
-        <style>body{font:16px system-ui;max-width:950px;margin:40px auto;background:#111827;color:#e5e7eb}input,button{padding:10px}pre{white-space:pre-wrap}h1{color:#6ee7b7}</style>
-        <h1>Local AI Router</h1><p>Loopback gateway. Enter local API token to inspect costs and traces.</p>
-        <input id="token" type="password" placeholder="Local API token"><button id="refresh">Refresh</button><pre id="result"></pre>
-        <script>document.getElementById('refresh').onclick=async()=>{const r=await fetch('/router/dashboard',{headers:{Authorization:'Bearer '+document.getElementById('token').value}});document.getElementById('result').textContent=JSON.stringify(await r.json(),null,2)}</script>''')
+    from .task_api import install
+    install(app, engine)
+    from .mcp_server import create_mcp
+    hub_mcp = create_mcp(settings, engine)
+    app.router.routes.extend(hub_mcp.streamable_http_app().routes)
+
     return app
 
 async def bounded_json(request):

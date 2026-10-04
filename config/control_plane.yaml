@@ -1,0 +1,4 @@
+control_plane:
+  routing_location: local-only
+  fully_local: false
+  telemetry: false

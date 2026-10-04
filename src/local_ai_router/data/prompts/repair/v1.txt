@@ -1,0 +1,1 @@
+Repair the failing task using the supplied feedback and current file hashes. Preserve all constraints and existing tests. Return structured complete file replacements only for expected_artifacts. Never fix tests by weakening assertions. Do not claim validation success; host checks it.
