@@ -19,3 +19,35 @@ scripts/claude-*.cmd
 scripts/claude-*.ps1
 dist/
 build/
+# Local credentials, runtime state and diagnostics
+.env.*
+!.env.example
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+*.pem
+*.key
+*.p12
+*.pfx
+*.dpapi
+logs/
+accension-diagnostics*.zip
+# Development outputs and private editor state
+.coverage*
+coverage.xml
+htmlcov/
+.ruff_cache/
+.venv*/
+venv/
+*.py[cod]
+.idea/
+.vscode/
+*.bak
+*.tmp
+.auth/
+.cache/

@@ -1,0 +1,8 @@
+# All changes, including this file, require the owner.
+* @Jigsaw777
+/.github/ @Jigsaw777
+/.github/CODEOWNERS @Jigsaw777
+/scripts/security* @Jigsaw777
+/SECURITY.md @Jigsaw777
+/pyproject.toml @Jigsaw777
+/requirements* @Jigsaw777

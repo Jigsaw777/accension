@@ -1,5 +1,5 @@
 "use strict";
-const pages = ["Setup", "Providers", "Models", "Roles", "Routing", "Repositories", "Integrations", "Playground", "Traces", "Costs", "Cache", "System"];
+const pages = ["Setup", "Providers", "Models", "Roles", "Routing", "Skills", "Presets", "Repositories", "Integrations", "Playground", "Traces", "Logs", "Costs", "Cache", "System"];
 const $ = id => document.getElementById(id);
 let csrf = null, state = null, pulseState = null, pulseStream = null;
 function el(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
@@ -22,7 +22,7 @@ function result(value) {
 async function api(path, body) {
   const r = await fetch(path, {method: body === undefined ? "GET" : "POST", credentials: "same-origin", headers: body === undefined ? {} : {"Content-Type": "application/json", "X-CSRF-Token": csrf || ""}, body: body === undefined ? undefined : JSON.stringify(body)});
   let data; try { data = await r.json(); } catch { throw Error("The local server returned an unreadable response."); }
-  if (!r.ok) { throw Error(r.status === 401 ? "Local session expired. Reload this page to reconnect." : typeof data.error === "string" ? data.error : typeof data.detail === "string" ? data.detail : "Check the supplied fields."); }
+  if (!r.ok) { const message=r.status === 401 ? "Local session expired. Reload this page to reconnect." : typeof data.error === "string" ? data.error : typeof data.detail === "string" ? data.detail : "Check the supplied fields."; throw Error(message+(data.error_id ? " Error ID: "+data.error_id : "")); }
   return data;
 }
 async function action(name, data = {}, refresh = true) {
@@ -81,7 +81,7 @@ function render() {
   const page = current(); $("title").textContent = page === "Setup" ? "Your AI, working together" : page;
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.textContent === page));
   $("content").replaceChildren(); $("status").textContent = state.policy.control_plane.fully_local || state.policy.routing.preset === "fully-local" ? "Fully local" : state.policy.control_plane.routing_location === "hybrid" ? "Hybrid decisions enabled" : "Local control";
-  ({Setup: setup, Providers: providers, Models: models, Roles: roles, Routing: routing, Repositories: repositories, Integrations: integrations, Playground: playground, Traces: traces, Costs: costs, Cache: cache, System: system})[page]();
+  ({Setup: setup, Providers: providers, Models: models, Roles: roles, Routing: routing, Skills: skills, Presets: skillPresets, Repositories: repositories, Integrations: integrations, Playground: playground, Traces: traces, Logs: logs, Costs: costs, Cache: cache, System: system})[page]();
 }
 function setup() {
   card("One place for every model.", "Connect the AI models you already use. Accension chooses eligible models by capability, quality and cost, then verifies repository changes. Routing, budgets and history stay on this computer.", $("content"), "hero");
@@ -161,9 +161,50 @@ function integrations() {
 }
 function playground() {
   const runCard=card("Compile and execute a task", "Use a registered repository with independent checks. Planning and execution can call eligible models within your configured budget.");
-  const rf=el("form");field(rf,"task","Goal","","textarea").required=true;field(rf,"repo_path","Repository",state.repositories[0]?.path||"","text",state.repositories.map(r=>[r.path,r.path]));field(rf,"mode","Action","plan-only","text",[["plan-only","Compile portable AXIR"],["execute","Run and verify"]]);field(rf,"budget","Maximum API budget (USD)",state.policy.budgets.default_request_budget,"number");field(rf,"privacy","Task privacy","LOCAL_ONLY","text",["LOCAL_ONLY","CLOUD_REDACTED","CLOUD_ALLOWED"]);submit(rf,"Start task",async data=>{const value=await action(data.get("mode")==="plan-only"?"plan":"run",{task:data.get("task"),repo_path:data.get("repo_path"),budget:Number(data.get("budget")),privacy:data.get("privacy")},false);if(value.status==="complete")showReceipt(await api("/ui/receipts/"+value.plan_id));});runCard.append(rf);
+  const rf=el("form"),goal=field(rf,"task","Goal","","textarea");goal.required=true;
+  field(rf,"repo_path","Repository",state.repositories[0]?.path||"","text",state.repositories.map(r=>[r.path,r.path]));
+  field(rf,"mode","Action","plan-only","text",[["plan-only","Create a plan"],["execute","Run and verify"]]);
+  field(rf,"budget","Maximum API budget (USD)",state.policy.budgets.default_request_budget,"number");
+  field(rf,"privacy","Task privacy","LOCAL_ONLY","text",["LOCAL_ONLY","CLOUD_REDACTED","CLOUD_ALLOWED"]);
+  const optional=el("details");optional.append(el("summary","Optional skills and preset"));
+  field(optional,"preset","Preset name (blank uses your saved default)");
+  const selected=skillPicker(optional);
+  optional.append(button("Suggest skills for this goal",async()=>{const suggestion=await api("/ui/action/skill-suggest",{query:goal.value,learned:true});selected.set(suggestion.skills);result(suggestion);},"quiet"));rf.append(optional);
+  submit(rf,"Start task",async data=>{const value=await action(data.get("mode")==="plan-only"?"plan":"run",{task:data.get("task"),repo_path:data.get("repo_path"),budget:Number(data.get("budget")),privacy:data.get("privacy"),preset:data.get("preset")||null,skills:selected.get()},false);if(value.status==="complete")showReceipt(await api("/ui/receipts/"+value.plan_id));});runCard.append(rf);
   const planned=state.runs.filter(r=>r.status==="planned");if(planned.length){const pc=card("Compiled plans","Execution checks repository hashes and current privacy, capability and quality gates again.");table(pc,["Plan","Repository",""],planned.map(r=>[r.id,r.repo,button("Execute",async()=>{const value=await action("execute",{plan_id:r.id,repo_path:r.repo},false);showReceipt(await api("/ui/receipts/"+value.plan_id));})]));}
   const c=card("Preview a route", "See classification, eligible models, fallback paths, cost bounds and privacy. This simulator makes no inference calls and changes no repository files.");const f=el("form");field(f,"task","Task","Add a small greeting feature with tests","textarea").required=true;field(f,"repo","Repository context (optional)","","text",[["","No repository context"],...state.repositories.map(r=>[r.path,r.path])]);submit(f,"Simulate route",data=>action("route",{task:data.get("task"),repo_path:data.get("repo")},false));c.append(f);
+}
+function skillPicker(parent, initial=[]) {
+  const chosen=new Set(initial), wrap=el("div"), list=el("div"), summary=el("p");
+  const search=field(wrap,"skill_search","Find skills by name or tag");let offset=0;
+  function selected(){summary.textContent="Selected: "+([...chosen].join(", ")||"none");}
+  async function refresh(){const page=await api("/ui/skills?limit=50&offset="+offset+"&search="+encodeURIComponent(search.value));list.replaceChildren();
+    page.items.forEach(s=>{const input=field(list,"skill_choice",`${s.name} · ${s.token_size} tokens${s.trusted?"":" · untrusted"}`,chosen.has(s.id),"checkbox");input.disabled=!s.enabled||!s.trusted;input.onchange=()=>{input.checked?chosen.add(s.id):chosen.delete(s.id);selected();};});selected();}
+  search.oninput=()=>{offset=0;refresh().catch(e=>notice(e.message,true));};
+  wrap.append(list,summary,button("Previous skills",()=>{offset=Math.max(0,offset-50);return refresh();},"quiet"),button("More skills",()=>{offset+=50;return refresh();},"quiet"),button("Clear selection",()=>{chosen.clear();return refresh();},"quiet"));parent.append(wrap);refresh().catch(e=>notice(e.message,true));
+  return {get:()=>[...chosen],set:ids=>{chosen.clear();ids.forEach(id=>chosen.add(id));refresh().catch(e=>notice(e.message,true));}};
+}
+function skills() {
+  const c=card("Installed skills","Skills are reusable instructions. Inspect a skill before trusting it. Skills never grant tools or change your privacy or budget limits."),f=el("form"), list=el("div");
+  field(f,"query","Search skills");let offset=0,query="";
+  async function refresh(){const value=await api("/ui/skills?offset="+offset+"&search="+encodeURIComponent(query));list.replaceChildren();table(list,["Skill","Source / tags","Tokens","Status","Actions"],value.items.map(s=>{const group=el("div",undefined,"row");group.append(button("Inspect",()=>action("skill-info",{name:s.id},false),"quiet"),button(s.enabled?"Disable":"Enable",async()=>{await action(s.enabled?"skill-disable":"skill-enable",{name:s.id},false);await refresh();},"quiet"),button(s.trusted?"Untrust":"Trust inspected file",async()=>{await action(s.trusted?"skill-untrust":"skill-trust",{name:s.id},false);await refresh();},"quiet"));return [s.name,s.source+" / "+s.tags.join(", "),s.token_size,(s.enabled?"Enabled":"Disabled")+" · "+(s.trusted?"Trusted":"Untrusted"),group];}));}
+  submit(f,"Search",data=>{query=data.get("query");offset=0;return refresh();});c.append(f,list,button("Previous",()=>{offset=Math.max(0,offset-50);return refresh();},"quiet"),button("Next",()=>{offset+=50;return refresh();},"quiet"));
+  const add=card("Add or scan local skills","Scanning reads SKILL.md files only. New skills start untrusted; no scripts are executed."),af=el("form");field(af,"path","Skill file or folder path").required=true;submit(af,"Add skill",data=>action("skill-add",{path:data.get("path")}));add.append(af,button("Scan known skill folders",()=>action("skill-scan"),"quiet"));
+  refresh().catch(e=>notice(e.message,true));
+}
+function skillPresets() {
+  const c=card("Skill presets","Save groups of skills. Your choices for one run take precedence over repository, session, then global defaults."),list=el("div"),edit=card("Create or edit a preset","There is no preset-count limit. Each active combination must fit the skill token budget."),f=el("form");let offset=0,editing=null;
+  const name=field(f,"name","Name"),description=field(f,"description","Description"),budget=field(f,"token_budget","Optional skill token budget","","number"),selection=skillPicker(f);
+  submit(f,"Save preset",async data=>{await action(editing?"preset-update":"preset-create",{name:editing||data.get("name"),target:data.get("name"),description:data.get("description"),token_budget:data.get("token_budget")?Number(data.get("token_budget")):null,skills:selection.get()});});edit.append(f);
+  async function refresh(){const value=await api("/ui/presets?offset="+offset);list.replaceChildren(el("p",value.total+" saved presets"));table(list,["Preset","Skills","Actions"],value.items.map(p=>{const group=el("div",undefined,"row");group.append(button("Edit",()=>{editing=p.name;name.value=p.name;description.value=p.description;budget.value=p.token_budget??"";selection.set(p.ordered_skills);},"quiet"),button("Duplicate",()=>{editing=null;name.value=p.name+"-copy";description.value=p.description;selection.set(p.ordered_skills);},"quiet"),button("Use globally",()=>action("preset-use",{name:p.name}),"quiet"),button("Delete",()=>action("preset-delete",{name:p.name}),"danger"));return [p.name,p.ordered_skills.join(", "),group];}));}
+  c.append(list,button("Previous",()=>{offset=Math.max(0,offset-50);return refresh();},"quiet"),button("Next",()=>{offset+=50;return refresh();},"quiet"));
+  const assignment=card("Use a preset for a repository","This overrides your global default for this repository."),af=el("form");field(af,"name","Preset name");field(af,"repo","Repository","","text",state.repositories.map(r=>[r.path,r.path]));submit(af,"Assign preset",data=>action("preset-use",{name:data.get("name"),repo:data.get("repo")}));assignment.append(af);refresh().catch(e=>notice(e.message,true));
+}
+function logs() {
+  const c=card("Local logs","Redacted troubleshooting events. Copy an ID or open its task trace to investigate a failure."),f=el("form"),list=el("div");
+  field(f,"level","Level","","text",["","ERROR","WARNING","INFO","DEBUG"]);field(f,"component","Component");field(f,"run","Run, request or error ID");field(f,"since","Since (ISO date or timestamp)");
+  async function refresh(data=new FormData(f)){const query=new URLSearchParams();for(const [key,value] of data)if(value)query.set(key,value);const value=await api("/ui/logs?"+query);list.replaceChildren();table(list,["Time","Level","Component / event","ID","Actions"],value.items.map(row=>{const id=row.error_id||row.request_id||row.run_id||"",group=el("div",undefined,"row");group.append(button("Copy ID",()=>navigator.clipboard.writeText(id),"quiet"));if(row.request_id)group.append(button("Open trace",async()=>result(await api("/ui/traces/"+encodeURIComponent(row.request_id))),"quiet"));return [row.timestamp,row.level,row.component+" / "+row.event,id,group];}));}
+  submit(f,"Filter logs",refresh);c.append(f,list);refresh().catch(e=>notice(e.message,true));
 }
 function traces() {
   const receipts=card("Receipts & Routing Lab", "Inspect recorded usage, economics, changed-file hashes and validation. Lab comparisons use local evidence and make no model calls.");table(receipts,["Run","Status","Evidence"],state.runs.map(r=>{const group=el("div",undefined,"row");group.append(button("Receipt",async()=>showReceipt(await api("/ui/receipts/"+r.id)),"quiet"),button("Routing Lab",()=>action("lab-compare",{run_id:r.id},false),"quiet"));return[r.id,r.status,group];}));

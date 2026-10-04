@@ -1,22 +1,41 @@
 """Repository containment, hash-checked edits and trusted validation commands."""
+
 from __future__ import annotations
-import asyncio, hashlib, json, os, re, subprocess, sys
+
+import asyncio
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
 from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 
-SECRET = re.compile(r"(?i)(?:bearer\s+[\w.-]{12,}|(?:api[_-]?key|password|secret|access_token)[\"']?\s*[:=]\s*[\"']?[^\s\"',}]{8,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN .*PRIVATE KEY-----)")
+SECRET = re.compile(
+    r"(?i)(?:bearer\s+[\w.-]{12,}|(?:api[_-]?key|password|secret|access_token)[\"']?\s*[:=]\s*[\"']?[^\s\"',}]{8,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN .*PRIVATE KEY-----)"
+)
 SENSITIVE = re.compile(r"(?i)(^|[/\\])(?:\.env(?:\..*)?|credentials|id_rsa|id_ed25519|.*\.(?:pem|key|pfx|p12))$")
 FORBIDDEN_PARTS = {".git", ".router", ".codex", ".agents", ".aws", ".ssh", ".venv", "node_modules"}
 
+
 def redact(value):
     if isinstance(value, dict):
-        return {k: ("[REDACTED]" if re.search(r"(?i)(secret|password|api_key|authorization|access_token)", k) else redact(v)) for k, v in value.items()}
+        return {
+            k: (
+                "[REDACTED]" if re.search(r"(?i)(secret|password|api_key|authorization|access_token)", k) else redact(v)
+            )
+            for k, v in value.items()
+        }
     if isinstance(value, list):
         return [redact(x) for x in value]
     if isinstance(value, str):
-        value = re.sub(r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[REDACTED]", value, flags=re.S)
+        value = re.sub(
+            r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[REDACTED]", value, flags=re.S
+        )
         return SECRET.sub("[REDACTED]", value)
     return value
+
 
 def digest(path: Path):
     if not path.exists():
@@ -24,11 +43,18 @@ def digest(path: Path):
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
 
+
 def safe_path(root: Path, relative: str, internal: bool = False) -> Path:
     root = root.resolve()
     win = PureWindowsPath(relative)
     parts = relative.replace("\\", "/").split("/")
-    if not relative or win.drive or win.root or Path(relative).is_absolute() or any(x in ("", ".", "..") or ":" in x or x.endswith((" ", ".")) for x in parts):
+    if (
+        not relative
+        or win.drive
+        or win.root
+        or Path(relative).is_absolute()
+        or any(x in ("", ".", "..") or ":" in x or x.endswith((" ", ".")) for x in parts)
+    ):
         raise ValueError("Unsafe relative file path")
     checked_parts = parts[1:] if internal and parts[0] == ".router" else parts
     if any(p.lower() in FORBIDDEN_PARTS for p in checked_parts) or SENSITIVE.search(relative):
@@ -47,6 +73,7 @@ def safe_path(root: Path, relative: str, internal: bool = False) -> Path:
         raise ValueError("Reserved Windows path")
     return path
 
+
 @contextmanager
 def repo_lock(root: Path):
     state = safe_path(root, ".router", internal=True)
@@ -55,12 +82,15 @@ def repo_lock(root: Path):
     try:
         if os.name == "nt":
             import msvcrt
+
             if file.tell() == 0:
-                file.write(b"0"); file.flush()
+                file.write(b"0")
+                file.flush()
             file.seek(0)
             msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
         else:
             import fcntl
+
             fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         file.close()
@@ -69,6 +99,7 @@ def repo_lock(root: Path):
         yield
     finally:
         file.close()
+
 
 class Edits:
     def __init__(self, root: Path, run: str):
@@ -101,7 +132,13 @@ class Edits:
             if change.path not in self.originals:
                 original = path.read_bytes() if path.exists() else None
                 self.originals[change.path] = original
-                backup = safe_path(self.root, (self.backup / (hashlib.sha256(change.path.encode()).hexdigest()+".bak")).relative_to(self.root).as_posix(), internal=True)
+                backup = safe_path(
+                    self.root,
+                    (self.backup / (hashlib.sha256(change.path.encode()).hexdigest() + ".bak"))
+                    .relative_to(self.root)
+                    .as_posix(),
+                    internal=True,
+                )
                 if original is not None:
                     backup.write_bytes(original)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,7 +163,17 @@ class Edits:
         journal = safe_path(self.root, (self.backup / "journal.json").relative_to(self.root).as_posix(), internal=True)
         temporary = journal.with_suffix(".saving")
         with temporary.open("w", encoding="utf-8") as stream:
-            json.dump({p: {"original_sha256": hashlib.sha256(v).hexdigest() if v is not None else None, "written_sha256": self.written.get(p), "backup": hashlib.sha256(p.encode()).hexdigest()+".bak"} for p,v in self.originals.items()}, stream)
+            json.dump(
+                {
+                    p: {
+                        "original_sha256": hashlib.sha256(v).hexdigest() if v is not None else None,
+                        "written_sha256": self.written.get(p),
+                        "backup": hashlib.sha256(p.encode()).hexdigest() + ".bak",
+                    }
+                    for p, v in self.originals.items()
+                },
+                stream,
+            )
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(journal)
@@ -139,7 +186,7 @@ class Edits:
             return edits
         for name, item in json.loads(journal.read_text(encoding="utf-8")).items():
             safe_path(root, name)
-            filename = hashlib.sha256(name.encode()).hexdigest()+".bak"
+            filename = hashlib.sha256(name.encode()).hexdigest() + ".bak"
             if item["backup"] != filename:
                 raise ValueError("Invalid recovery journal backup")
             saved = safe_path(root, (edits.backup / filename).relative_to(root).as_posix(), internal=True)
@@ -167,6 +214,7 @@ class Edits:
                 path.write_bytes(original)
         return conflicts
 
+
 def validation_argv(commands: dict[str, list[str]], name: str):
     if name not in commands:
         raise ValueError(f"Unregistered validation check: {name}")
@@ -182,14 +230,17 @@ def validation_argv(commands: dict[str, list[str]], name: str):
     if exe == "git" and any(a in {"push", "reset", "clean", "checkout"} for a in argv[1:]):
         raise ValueError("Mutating Git validation entry is forbidden")
     if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", exe) and any(a in {"-c", "-m"} for a in argv[1:]):
-        module = argv[argv.index("-m")+1:argv.index("-m")+2] if "-m" in argv else []
-        if "-c" in argv or ("-m" in argv and (not module or module[0] not in {"pytest", "unittest", "compileall", "ruff", "mypy"})):
+        module = argv[argv.index("-m") + 1 : argv.index("-m") + 2] if "-m" in argv else []
+        if "-c" in argv or (
+            "-m" in argv and (not module or module[0] not in {"pytest", "unittest", "compileall", "ruff", "mypy"})
+        ):
             raise ValueError("Only registered Python test/lint modules are allowed")
     return argv
 
+
 async def validate(root: Path, commands: dict[str, list[str]], names: list[str], timeout: float):
     results = []
-    env = {k: v for k,v in os.environ.items() if not re.search(r"(?i)(key|token|secret|password|credential)", k)}
+    env = {k: v for k, v in os.environ.items() if not re.search(r"(?i)(key|token|secret|password|credential)", k)}
     env["PYTHONNOUSERSITE"] = "1"
     for name in dict.fromkeys(names):
         argv = validation_argv(commands, name)
@@ -197,27 +248,50 @@ async def validate(root: Path, commands: dict[str, list[str]], names: list[str],
         log = safe_path(root, ".router/validation.log", internal=True)
         log.parent.mkdir(exist_ok=True)
         with log.open("wb") as output:
-            proc = await asyncio.create_subprocess_exec(*argv, cwd=root, env=env, stdin=subprocess.DEVNULL,
-                                                        stdout=output, stderr=subprocess.STDOUT,
-                                                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-                                                        start_new_session=os.name != "nt")
+            proc = await asyncio.create_subprocess_exec(
+                *argv,
+                cwd=root,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                start_new_session=os.name != "nt",
+            )
             timed_out = False
             try:
                 await asyncio.wait_for(proc.wait(), timeout)
             except (TimeoutError, asyncio.CancelledError) as exc:
                 if os.name == "nt":
-                    killer = await asyncio.create_subprocess_exec("taskkill", "/PID", str(proc.pid), "/T", "/F", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    killer = await asyncio.create_subprocess_exec(
+                        "taskkill",
+                        "/PID",
+                        str(proc.pid),
+                        "/T",
+                        "/F",
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
                     await killer.wait()
                 else:
                     import signal
+
                     os.killpg(proc.pid, signal.SIGKILL)
                 await proc.wait()
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 timed_out = True
         with log.open("rb") as f:
-            f.seek(max(0, log.stat().st_size-6000))
+            f.seek(max(0, log.stat().st_size - 6000))
             tail = redact(f.read().decode("utf-8", errors="replace"))
         log.write_text(tail, encoding="utf-8")
-        results.append({"check": name, "passed": proc.returncode == 0 and not timed_out, "exit_code": proc.returncode, "timeout": timed_out, "output": tail})
+        results.append(
+            {
+                "check": name,
+                "passed": proc.returncode == 0 and not timed_out,
+                "exit_code": proc.returncode,
+                "timeout": timed_out,
+                "output": tail,
+            }
+        )
     return results

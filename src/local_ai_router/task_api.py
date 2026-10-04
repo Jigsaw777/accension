@@ -1,18 +1,32 @@
 """Native task API uses the same compiler, restrictions and execution engine as CLI/MCP."""
+
 import json
-from fastapi import Request as HTTPRequest, HTTPException
-from .schema import Request
+
+from fastapi import Request as HTTPRequest
+
 from . import axir, receipts
+from .schema import Request
 
 
 def run_status(engine, run_id):
-    row = engine.store.db.execute("SELECT * FROM runs WHERE id=? OR json_extract(data,'$.plan.request_id')=? ORDER BY rowid DESC LIMIT 1", (run_id, run_id)).fetchone()
+    row = engine.store.db.execute(
+        "SELECT * FROM runs WHERE id=? OR json_extract(data,'$.plan.request_id')=? ORDER BY rowid DESC LIMIT 1",
+        (run_id, run_id),
+    ).fetchone()
     if row is None:
         raise ValueError("Unknown run")
     data = json.loads(row["data"])
-    return {"run_id": row["id"], "request_id": data["plan"]["request_id"], "status": row["status"],
-            "completed_tasks": list(data.get("completed", {})), "total_tasks": len(data["plan"]["tasks"]),
-            "result": data.get("result"), "receipt_available": bool(engine.store.db.execute("SELECT 1 FROM receipts WHERE run=?", (row["id"],)).fetchone())}
+    return {
+        "run_id": row["id"],
+        "request_id": data["plan"]["request_id"],
+        "status": row["status"],
+        "completed_tasks": list(data.get("completed", {})),
+        "total_tasks": len(data["plan"]["tasks"]),
+        "result": data.get("result"),
+        "receipt_available": bool(
+            engine.store.db.execute("SELECT 1 FROM receipts WHERE run=?", (row["id"],)).fetchone()
+        ),
+    }
 
 
 def install(app, engine):

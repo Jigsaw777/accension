@@ -1,6 +1,6 @@
 # AXIR v1
 
-Accension Execution Intermediate Representation is a portable declarative envelope around a validated plan. It separates task requirements from the models available on one machine.
+AXIR is the portable format for a saved Accension task plan. It records the work to do, its limits and the checks required. You can inspect the plan, choose suitable models on another machine and execute it against a registered repository. AXIR stands for Accension Execution Intermediate Representation.
 
 ```sh
 accs plan "Refactor authentication" --repo . --export auth.axir.json

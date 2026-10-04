@@ -1,4 +1,5 @@
 """Authentication strategies shared by provider plugins and transports."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,11 @@ class AuthStrategy(Protocol):
 
 class APIKeyAuth:
     async def headers(self, provider, manager):
-        key = manager.vault.read(provider.credential_ref) if provider.credential_ref else read_secret(manager.settings, provider.api_key_env)
+        key = (
+            manager.vault.read(provider.credential_ref)
+            if provider.credential_ref
+            else read_secret(manager.settings, provider.api_key_env)
+        )
         if (provider.credential_ref or provider.api_key_env) and not key:
             raise AuthenticationRequired("Provider credential is missing; reconnect the provider")
         if not key:
@@ -34,6 +39,7 @@ class APIKeyAuth:
 class AzureIdentityAuth:
     async def headers(self, provider, manager):
         from .azure_auth import get_token
+
         key = await asyncio.to_thread(get_token, manager.settings, "https://cognitiveservices.azure.com/.default")
         return {"Authorization": "Bearer " + key}
 
@@ -46,7 +52,9 @@ class CommandAuth:
         cached = manager.cache.get(cache_id)
         if cached and cached[1] > time.time():
             return {"Authorization": "Bearer " + cached[0]}
-        proc = await asyncio.create_subprocess_exec(*provider.token_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        proc = await asyncio.create_subprocess_exec(
+            *provider.token_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        )
         try:
             out, _ = await asyncio.wait_for(proc.communicate(), 15)
         except BaseException:
@@ -70,21 +78,27 @@ class GoogleADCAuth:
             if credentials is None:
                 try:
                     import google.auth
+
                     if provider.service_account_file:
                         from google.oauth2 import service_account
-                        credentials = service_account.Credentials.from_service_account_file(provider.service_account_file, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+
+                        credentials = service_account.Credentials.from_service_account_file(
+                            provider.service_account_file, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                        )
                     else:
                         credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
                 except ImportError:
                     raise AuthenticationRequired("Install accension[google] to use Google credentials") from None
                 manager.google_credentials[cache_id] = credentials
             if not credentials.valid:
-                from google.auth.transport.requests import Request
                 import requests
+                from google.auth.transport.requests import Request
+
                 with requests.Session() as session:
                     session.trust_env = False
                     credentials.refresh(Request(session=session))
             return credentials.token
+
         return {"Authorization": "Bearer " + await asyncio.to_thread(token)}
 
 
@@ -97,25 +111,46 @@ class AuthManager:
     def __init__(self, settings):
         self.settings, self.vault = settings, CredentialStore(settings)
         self.cache, self.google_credentials, self.clients = {}, {}, {}
-        self.strategies = {"api_key": APIKeyAuth(), "azure_identity": AzureIdentityAuth(), "command": CommandAuth(), "google_adc": GoogleADCAuth(), "none": NoAuth(), "aws_chain": NoAuth()}
+        self.strategies = {
+            "api_key": APIKeyAuth(),
+            "azure_identity": AzureIdentityAuth(),
+            "command": CommandAuth(),
+            "google_adc": GoogleADCAuth(),
+            "none": NoAuth(),
+            "aws_chain": NoAuth(),
+        }
 
     async def headers(self, provider):
         from .privacy import guard_provider
+
         guard_provider(self.settings, provider, "metadata")
         mode = provider.auth
         if mode == "auto":
-            mode = "command" if provider.token_command else "azure_identity" if provider.azure_identity else "google_adc" if provider.kind == "vertex" else "api_key"
+            mode = (
+                "command"
+                if provider.token_command
+                else "azure_identity"
+                if provider.azure_identity
+                else "google_adc"
+                if provider.kind == "vertex"
+                else "api_key"
+            )
         try:
             headers = await self.strategies[mode].headers(provider, self)
         except Exception as exc:
             raise normalize_error(exc) from None
         headers.update({"Content-Type": "application/json", "X-Local-Router-Hop": "1"})
-        if provider.protocol == "anthropic_messages" or provider.api == "messages" or provider.kind in {"anthropic", "anthropic-compatible"}:
+        if (
+            provider.protocol == "anthropic_messages"
+            or provider.api == "messages"
+            or provider.kind in {"anthropic", "anthropic-compatible"}
+        ):
             headers["anthropic-version"] = "2023-06-01"
         return headers
 
     def aws_client(self, provider, service):
         from .privacy import guard_provider
+
         guard_provider(self.settings, provider, "metadata")
         key = (provider.region, provider.profile, service)
         if key not in self.clients:
@@ -126,8 +161,16 @@ class AuthManager:
                 raise AuthenticationRequired("Install accension[aws] to use the AWS credential chain") from None
             session = boto3.Session(profile_name=provider.profile or None, region_name=provider.region or None)
             # Each paid attempt needs its own reservation. SDK retries are disabled.
-            self.clients[key] = session.client(service, config=Config(connect_timeout=5, read_timeout=self.settings.routing.timeouts["cloud"],
-                retries={"total_max_attempts": 1, "mode": "standard"}, proxies={}, max_pool_connections=10))
+            self.clients[key] = session.client(
+                service,
+                config=Config(
+                    connect_timeout=5,
+                    read_timeout=self.settings.routing.timeouts["cloud"],
+                    retries={"total_max_attempts": 1, "mode": "standard"},
+                    proxies={},
+                    max_pool_connections=10,
+                ),
+            )
         return self.clients[key]
 
     def close(self):

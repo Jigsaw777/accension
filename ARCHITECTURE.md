@@ -1,6 +1,6 @@
 # Architecture
 
-Accension compiles explicit repository goals into AXIR task graphs, binds nodes to capability-qualified models, executes guarded edits and attaches evidence to receipts. Gateway, routing and orchestration are infrastructure beneath the compiler. Ordinary gateway forwarding does not compile a graph.
+Accension turns a repository task into a saved plan, chooses suitable models, applies bounded edits and runs your registered checks. It records what happened in an execution receipt. AXIR is the portable file format for that plan. The inference gateway can also forward model calls without creating a repository plan.
 
 ## Local control plane
 

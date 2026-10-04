@@ -1,30 +1,63 @@
 import asyncio
 import json
-import time
+from contextlib import asynccontextmanager
 from decimal import Decimal as D
 
 import pytest
 
 from local_ai_router.engine import Engine
+from local_ai_router.savings import cost
 from local_ai_router.schema import Model, Provider, Request
-from local_ai_router.savings import SavingsEngine, cost, empty_total, add_snapshot
-from local_ai_router.store import Store
 
 
 def configure(settings):
     settings.providers["cloud"] = Provider(kind="mock", local=False)
-    settings.models += [Model(id="baseline", provider="cloud", deployment_name="baseline", input_price=10, output_price=20, tier=4,
-                              quality_priors={"default": .99}),
-                        Model(id="cheap", provider="cloud", deployment_name="cheap", input_price=1, output_price=2,
-                              cached_input_price=.1, cache_write_price=2, quality_priors={"default": .99})]
+    settings.models += [
+        Model(
+            id="baseline",
+            provider="cloud",
+            deployment_name="baseline",
+            input_price=10,
+            output_price=20,
+            tier=4,
+            quality_priors={"default": 0.99},
+        ),
+        Model(
+            id="cheap",
+            provider="cloud",
+            deployment_name="cheap",
+            input_price=1,
+            output_price=2,
+            cached_input_price=0.1,
+            cache_write_price=2,
+            quality_priors={"default": 0.99},
+        ),
+    ]
     settings.savings.baseline_model = "baseline"
     return settings
 
 
-def record(engine, request, model="mock-worker", inputs=1000, outputs=100, cached=0, writes=0, task="edit", role="executor", failed=False):
+def record(
+    engine,
+    request,
+    model="mock-worker",
+    inputs=1000,
+    outputs=100,
+    cached=0,
+    writes=0,
+    task="edit",
+    role="executor",
+    failed=False,
+):
     m = next(m for m in engine.settings.models if m.id == model)
-    call = engine.store.reserve(request, "test", role, m, 0, 1, task_id=request+"-"+task if task else None)
-    engine.store.settle(call, None if failed else .1, {"input_tokens": inputs, "output_tokens": outputs, "cached_tokens": cached, "cache_write_tokens": writes}, 0, failed)
+    call = engine.store.reserve(request, "test", role, m, 0, 1, task_id=request + "-" + task if task else None)
+    engine.store.settle(
+        call,
+        None if failed else 0.1,
+        {"input_tokens": inputs, "output_tokens": outputs, "cached_tokens": cached, "cache_write_tokens": writes},
+        0,
+        failed,
+    )
     assert engine.store.savings.last_error is None
     return call
 
@@ -181,13 +214,17 @@ async def test_plan_cache_uses_observed_original_workload(settings):
 @pytest.mark.asyncio
 async def test_optional_analytics_failure_does_not_break_task(settings, repo, monkeypatch):
     async with managed(settings) as engine:
+
         def broken(*args, **kwargs):
             raise RuntimeError("analytics unavailable")
+
         monkeypatch.setattr(engine.store.savings, "reserve", broken)
         monkeypatch.setattr(engine.store.savings, "finalize", broken)
         result = await engine.run(Request(task="Add a greeting feature with tests", repo_path=str(repo)))
         assert result["status"] == "complete"
-        receipt = json.loads(engine.store.db.execute("SELECT data FROM receipts WHERE run=?", (result["plan_id"],)).fetchone()[0])
+        receipt = json.loads(
+            engine.store.db.execute("SELECT data FROM receipts WHERE run=?", (result["plan_id"],)).fetchone()[0]
+        )
         assert receipt["economics"]["available"] is False
         assert not engine.active_runs
 
@@ -195,13 +232,14 @@ async def test_optional_analytics_failure_does_not_break_task(settings, repo, mo
 @pytest.mark.asyncio
 async def test_sse_coalescing_stream_state(settings):
     from local_ai_router.savings_stream import SavingsStream
+
     async with managed(configure(settings)) as engine:
         stream = SavingsStream(engine)
         queue = asyncio.Queue(maxsize=1)
         stream.queues.add(queue)
         watcher = asyncio.create_task(stream.watch())
         try:
-            await asyncio.sleep(.01)
+            await asyncio.sleep(0.01)
             engine.store.savings.begin("live")
             for _ in range(12):
                 engine.store.savings.changed()
@@ -217,7 +255,14 @@ async def test_sse_coalescing_stream_state(settings):
 
 
 def test_decimal_cache_billing_zero_price():
-    prices = dict(input_price="10", output_price="20", cached_input_price="0", cache_write_price="15", currency="USD", status="known")
+    prices = dict(
+        input_price="10",
+        output_price="20",
+        cached_input_price="0",
+        cache_write_price="15",
+        currency="USD",
+        status="known",
+    )
     assert cost(prices, 1000, 100, 800, 100) == D(".0045")
 
 
@@ -244,11 +289,15 @@ async def test_missing_analytics_and_disable_during_run_are_not_zero(settings, m
 async def test_standalone_reused_request_gets_distinct_immutable_receipts(settings):
     async with managed(configure(settings)) as engine:
         first = record(engine, "same", "cheap")
-        before = json.loads(engine.store.db.execute("SELECT data FROM savings_runs WHERE request=?", (first,)).fetchone()[0])
+        before = json.loads(
+            engine.store.db.execute("SELECT data FROM savings_runs WHERE request=?", (first,)).fetchone()[0]
+        )
         second = record(engine, "same", "cheap")
         assert first != second
         assert engine.store.savings.summary("all")["actual_cost"] == "0.0024"
-        after = json.loads(engine.store.db.execute("SELECT data FROM savings_runs WHERE request=?", (first,)).fetchone()[0])
+        after = json.loads(
+            engine.store.db.execute("SELECT data FROM savings_runs WHERE request=?", (first,)).fetchone()[0]
+        )
         assert after == before and after["finalized"]
 
 
@@ -281,13 +330,15 @@ async def test_abandoned_owner_is_interrupted(settings, monkeypatch):
 async def test_orphan_accounting_failure_survives_restart(settings, monkeypatch):
     configure(settings)
     async with managed(settings) as engine:
+
         def broken(*args):
             raise RuntimeError("analytics unavailable")
+
         monkeypatch.setattr(engine.store.savings, "reserve", broken)
         model = next(m for m in settings.models if m.id == "cheap")
         call = engine.store.reserve("orphan", "test", "executor", model, 0, 1)
-        engine.store.settle(call, .0012, {"input_tokens": 1000, "output_tokens": 100}, 0, False)
-        assert engine.store.costs()["estimated_usd"] == .0012
+        engine.store.settle(call, 0.0012, {"input_tokens": 1000, "output_tokens": 100}, 0, False)
+        assert engine.store.costs()["estimated_usd"] == 0.0012
     async with managed(settings) as restarted:
         for period in ("all", "today", "current", "session", "7d", "30d"):
             data = restarted.store.savings.summary(period, "test")
@@ -301,6 +352,7 @@ async def test_orphan_accounting_failure_survives_restart(settings, monkeypatch)
 @pytest.mark.asyncio
 async def test_generic_receipt_markdown(settings):
     from local_ai_router.receipts import get, markdown
+
     async with managed(configure(settings)) as engine:
         call = record(engine, "standalone", "cheap")
         rendered = markdown(get(engine, call))
@@ -317,30 +369,30 @@ async def test_generic_receipt_markdown(settings):
 async def test_late_accounting_failure_is_durable_until_receipt(settings, monkeypatch, failure, explicit_group):
     configure(settings)
     async with managed(settings) as engine:
+
         def broken(*args):
             raise RuntimeError("accounting fault")
+
         monkeypatch.setattr(engine.store.savings, failure, broken)
         if explicit_group:
             engine.store.savings.begin("late-fault", "test")
         model = next(m for m in settings.models if m.id == "cheap")
         call = engine.store.reserve("late-fault", "test", "executor", model, 0, 1)
-        engine.store.settle(call, .0012, {"input_tokens": 1000, "output_tokens": 100}, 0, False)
+        engine.store.settle(call, 0.0012, {"input_tokens": 1000, "output_tokens": 100}, 0, False)
         if explicit_group and failure == "finalize":
             engine.store.economics("finish", "late-fault")
-        assert engine.store.costs()["estimated_usd"] == .0012
+        assert engine.store.costs()["estimated_usd"] == 0.0012
     async with managed(settings) as engine:
         for period in ("all", "today", "current", "session"):
             data = engine.store.savings.summary(period)
             assert data["actual_cost"] is None and data["partial"]
         if failure == "settle":
-            engine.store.savings.settle(call, .0012, {"input_tokens": 1000, "output_tokens": 100}, False)
+            engine.store.savings.settle(call, 0.0012, {"input_tokens": 1000, "output_tokens": 100}, False)
         if explicit_group or failure == "finalize":
             engine.store.savings.finish("late-fault" if explicit_group else call)
         assert engine.store.db.execute("SELECT COUNT(*) FROM savings_gaps").fetchone()[0] == 0
         assert engine.store.savings.summary("all")["actual_cost"] == "0.0012"
 
-
-from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def managed(settings):

@@ -1,6 +1,6 @@
 # Model DNA
 
-Inspect in Models or with `accs model dna MODEL_ID`; `--reset` removes that model's learned DNA, preserving metadata.
+Model DNA is Accension's local record of a model's observed strengths and failures. It helps routing decisions as evidence accumulates; it is not a guarantee of quality. Inspect it in **Models** or with `accs model dna MODEL_ID`. Use `--reset` to clear that model's learned observations while keeping its setup.
 
 Dimensions include classification, planning, architecture, coding, debugging, testing, review, repair, tool use, structured output, instruction following, long context, documentation, reasoning, reliability and cost efficiency. Each includes a nullable value, sample count, provenance/source counts, update time and uncertainty. Unobserved means value null, samples zero and uncertainty unknown.
 

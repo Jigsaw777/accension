@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: accension-ruff
+        name: Accension Python lint
+        entry: python -m ruff check
+        language: system
+        types: [python]
+      - id: accension-format
+        name: Accension Python format
+        entry: python -m ruff format --check
+        language: system
+        types: [python]
+      - id: accension-public-files
+        name: Accension public file safety
+        entry: python scripts/scan_public.py
+        language: system
+        pass_filenames: false
+      - id: accension-security-policy
+        name: Accension sensitive call review
+        entry: python scripts/security_policy.py
+        language: system
+        pass_filenames: false

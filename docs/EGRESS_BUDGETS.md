@@ -1,6 +1,6 @@
 # Cloud egress budgets
 
-Money and context are separate. `accs run TASK --repo . --max-cloud-context 12000` caps cumulative request input sent to cloud, not each call. Configure privacy.max_cloud_context_tokens_per_request and privacy.max_cloud_files_per_request globally or per repository. AXIR nodes can impose stricter limits.
+Egress means information sent out to a cloud provider. A cloud context budget limits how much task input can leave your computer across all calls in a request. This is separate from a money budget. Use `accs run TASK --repo . --max-cloud-context 12000` to set a request limit. Global and repository settings can set stricter defaults.
 
 An SQLite transaction reserves an input-token upper bound and unique file set before transmission, preventing parallel races. Confirmed unsent calls can release reservations; ambiguous delivery retains them. This conservative serialized-input bound includes system/schema overhead and is not exact provider tokenization. Output is controlled by monetary/output caps.
 

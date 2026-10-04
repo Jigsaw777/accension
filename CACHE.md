@@ -1,6 +1,6 @@
 # Cache and token reduction
 
-Exact caches cover classification, validated plans, incremental file metadata/AST, repository graph artifacts and evaluation results. Keys use SHA-256 over canonical input plus the relevant repository fingerprint, policy and versioned prompt text. Plans get fresh IDs when reused, then stale-content validation before execution. Protected constraints, task acceptance criteria, hashes and tool results are retained.
+Accension reuses matching results to avoid repeating work and sending the same context again. It caches classifications, checked plans, file metadata and evaluations. Cache keys include the inputs, relevant file hashes, settings and prompt version. Reused plans receive fresh IDs, and files are checked again before edits. User constraints, acceptance criteria, hashes and tool limits stay intact.
 
 ```mermaid
 flowchart TD

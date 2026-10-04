@@ -1,6 +1,6 @@
-# Migrating V1 to V2
+# Upgrading early development builds
 
-Keep the existing home directory. Install V2 in the same environment, or point a new installation at it with `--home PATH`. Finish active work before restarting the service.
+Early development builds used an older configuration format. Keep the existing home directory. Install Accension 1.0.0 in the same environment, or point a new installation at it with `--home PATH`. Finish active work before restarting the service.
 
 1. Run `router --home PATH config migrate`.
 2. Run `router --home PATH config validate`.
@@ -9,7 +9,7 @@ Keep the existing home directory. Install V2 in the same environment, or point a
 
 Migration takes the configuration writer lock, validates input, backs up changed files and the existing database, checks for intervening manual edits, then atomically replaces files. It prints the backup path. A repeat is a no-op. SQLite upgrades are additive and retain a pre-upgrade backup.
 
-| V1 concept | V2 treatment |
+| Older setting | Current treatment |
 |---|---|
 | laya_enabled/command/args/timeout/confidence_threshold | Generic classifier settings |
 | jev_model/risk_threshold, require_jev_for_critical | Generic arbiter settings |
@@ -26,3 +26,7 @@ Remote arbitration is not enabled implicitly: defaults keep routing decisions lo
 Existing client registrations normally require no changes because module/MCP names are stable. If installation paths change, use the backed-up legacy replacement workflow or explicitly replace the managed entry. Do not overwrite a different registration silently.
 
 Never restore an old database over a running process. Backups can contain local paths, private state and credential references; keep them private.
+
+The public product version is 1.0.0. Configuration schema 2, database schema 3 and versioned cache keys describe internal formats; they are intentionally unchanged.
+
+The default home now uses your user configuration directory. If an early checkout stored settings beside the source, continue using `--home PATH` or `ROUTER_HOME` to select that existing home. No files are moved automatically.

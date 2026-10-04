@@ -1,4 +1,5 @@
 """V1 compatibility lives here, outside the control-plane vocabulary."""
+
 from __future__ import annotations
 
 import shutil
@@ -30,7 +31,11 @@ def migrate_routing(raw: dict, warn=True) -> dict:
     if old and "classifier_tool" not in data:
         data["classifier_tool"] = "laya_decide"
     if old and warn:
-        warnings.warn("V1 routing keys are deprecated; run router config migrate. " + ", ".join(old), DeprecationWarning, stacklevel=3)
+        warnings.warn(
+            "Older routing keys are deprecated; run router config migrate. " + ", ".join(old),
+            DeprecationWarning,
+            stacklevel=3,
+        )
     return data
 
 
@@ -41,8 +46,10 @@ class LegacyRoutingAccessors:
 def _alias(name):
     def get(self):
         return getattr(self, name)
+
     def set_(self, value):
         setattr(self, name, value)
+
     return property(get, set_)
 
 
@@ -58,6 +65,7 @@ def classifier_reason(code: str) -> list[str]:
 def migrate_files(home: Path) -> dict:
     """Validate the entire migration before backing up and replacing any files."""
     from .safety import repo_lock
+
     home = Path(home).resolve()
     home.mkdir(parents=True, exist_ok=True)
     # Share the configuration writer lock, including preparation and backups.
@@ -68,6 +76,7 @@ def migrate_files(home: Path) -> dict:
 def _migrate_files_locked(home: Path) -> dict:
     from .config import load
     from .safety import digest
+
     settings = load(home)
     changes = {}
     revisions = {}

@@ -2,6 +2,28 @@
 
 `accs`, `accension` and `router` share one parser and engine. Bare invocation opens the UI. Use `accs COMMAND --help` for exact flags. Human output is default; `--json` produces machine-readable stdout. Progress/errors use stderr. `--no-color` is accepted (output is already plain); `--debug` prints a redacted diagnostic traceback. `--home PATH` overrides `ROUTER_HOME`; `--mock` uses deterministic fixtures.
 
+## Skills, presets and logs
+
+Skills are reusable instruction files. Presets save groups of skills. Logs help investigate failures without storing full prompts or source code.
+
+```sh
+accs skill scan
+accs skill add ./review/SKILL.md
+accs skill info review
+accs skill trust review
+accs skill search debugging
+accs skill compose "Fix the cache" --learned
+accs preset create focus --skill review
+accs preset use focus --repo .
+accs run "Fix the cache" --repo . --preset focus
+accs skill recipes
+accs logs --level ERROR
+accs logs show ERROR_ID
+accs logs export --output diagnostics.zip
+```
+
+See [all skill and preset operations](SKILLS.md) and [log filters and rotation](LOGGING.md). `--skill` adds a temporary skill; `--skill-mode auto` allows local suggestions. Presets have no count limit. Invalid or oversized active combinations fail with an explanation.
+
 ## Setup and service
 
 ```sh

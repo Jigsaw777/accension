@@ -1,10 +1,10 @@
 # Configuration
 
-UI and CLI share typed Settings and Management. Saves update ignored `config/local.yaml` with validation, backup, stale-file checks and atomic replacement. Active inference/repository operations prevent configuration replacement. Restart other processes after a change.
+Use the CLI or local app to change settings. Both validate your choices and save them to the ignored `config/local.yaml` file, with a backup and protection against conflicting edits. Finish active tasks before changing configuration, then restart other Accension processes.
 
 ## Home and precedence
 
-`--home PATH` overrides `ROUTER_HOME`. Editable installs default to the checkout; wheel/tool installs default to `%APPDATA%/accension` on Windows or `~/.config/accension` elsewhere.
+`--home PATH` overrides `ROUTER_HOME`. All installations default to `%APPDATA%/accension` on Windows or `~/.config/accension` elsewhere.
 
 Files load in order: version, providers, models, routing, budgets, cache, skills, repositories, discovery, roles, control_plane, local. Each is `config/NAME.yaml`. **Top-level sections replace rather than deep-merge.** A local providers section must preserve all providers you want.
 
@@ -61,7 +61,7 @@ router config migrate
 
 Profiles contain routing, roles and budgets with private identifiers removed. They cannot execute commands, enable plugins, install software, reference credentials or weaken privacy. Trusted local config is separate from community profiles.
 
-See [migration](MIGRATION_V1_V2.md), [providers](PROVIDERS.md) and [routing](ROUTING_POLICY.md). Full field definitions are in `src/local_ai_router/config.py` and `schema.py`.
+See [migration](docs/UPGRADE_NOTES.md), [providers](PROVIDERS.md) and [routing](ROUTING_POLICY.md). Full field definitions are in `src/local_ai_router/config.py` and `schema.py`.
 
 ## Runtime scale and savings
 

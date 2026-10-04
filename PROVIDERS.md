@@ -1,6 +1,6 @@
 # Providers and evidence
 
-Connect a provider through its manifest-generated UI form. Credentials are saved as references and never read back. Inventory does not imply entitlement, complete capabilities or accurate pricing.
+A provider is a local model server or cloud AI service. Add one through **Providers** in the app or `accs provider add`. Keys are stored as credential references and are never shown again. A discovered model still needs suitable capabilities, access and pricing before Accension can use it.
 
 | Kind | Protocol | Authentication / inventory |
 |---|---|---|

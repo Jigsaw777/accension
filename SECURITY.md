@@ -1,8 +1,10 @@
 # Security and trust boundaries
 
+Accension runs locally by default. Provider keys stay in your local credential store or environment references. There is no hosted Accension account system. Repository changes use registered paths and checks. Provider plugins are executable code, so install only ones you trust.
+
 ## Reporting
 
-Use the repository's **Security > Report a vulnerability** feature when available. Otherwise request a private contact channel without publishing credentials or exploit details. V2 is an early implementation with no production-security or response-time guarantee.
+Use [GitHub private vulnerability reporting](https://github.com/Jigsaw777/accension/security/advisories/new). Do not publish credentials, private code or exploit details in public issues. Accension V1 has no production-security certification or guaranteed response time.
 
 ## Local service
 
@@ -26,8 +28,14 @@ Validation uses operator-owned argv arrays, bounded output, timeouts and process
 
 [Privacy](PRIVACY.md) gates run before built-in network/auth paths. Cloud context receives a heuristic secret preflight. Unknown/stale prices fail closed unless estimates are explicitly permitted. Reservations precede inference; uncertain failures retain reservations. Provider billing can differ from configured estimates.
 
-V2 integration writes change only the selected managed entry after preview, backups and stale-file checks. The UI installer does not change PATH or autostart. Legacy setup scripts keep their explicit opt-in behavior.
+Integration writes change only the selected managed entry after preview, backups and stale-file checks. The UI installer does not change PATH or autostart. Legacy setup scripts keep their explicit opt-in behavior.
 
-Run `python scripts/scan_public.py` before sharing changes. Heuristics supplement review and cannot certify that arbitrary content contains no secrets.
+Run `python scripts/check_local.py --full` before sharing security-sensitive changes. Gitleaks, public-path checks, CodeQL, Bandit, dependency audits and owner review provide several layers of protection. They cannot certify that arbitrary code is harmless. See [GitHub protection and release policy](docs/GITHUB_SECURITY.md).
+
+## Skills and logs
+
+Skills are text guides, separate from executable provider plugins. New skill files need explicit trust. Secret-like contents, excessive size, conflicts, missing dependencies and changed hashes block use. Skills cannot override tools, user constraints, privacy, budgets or a plan's contract. Preset imports cannot grant trust or permissions.
+
+Structured logs keep metadata rather than prompts, source or response bodies. Central redaction removes common credential patterns and sensitive fields. Logs rotate and stay in the configured local home. Diagnostic bundles exclude credentials, configuration files, source, skills and state databases. Review a bundle before sharing it; no redactor recognizes every possible secret format.
 
 AXIR import grants no executable commands: checks must already be registered. Egress reservations are transactional and retain uncertain delivery. Integration undo refuses to overwrite later edits. Sovereign launchers use process-scoped transport settings without replacing global client configuration. See [egress budgets](docs/EGRESS_BUDGETS.md).

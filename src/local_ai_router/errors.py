@@ -1,7 +1,9 @@
 """Public, secret-safe failures. Policy never depends on provider error text."""
+
 from __future__ import annotations
 
 import asyncio
+
 import httpx
 
 
@@ -62,8 +64,9 @@ def normalize_error(exc: Exception) -> ProviderError:
         if status in (401, 403):
             return AuthenticationRequired("Provider authentication or access required")
         if status == 429:
-            from email.utils import parsedate_to_datetime
             from datetime import datetime, timezone
+            from email.utils import parsedate_to_datetime
+
             raw = exc.response.headers.get("retry-after", "60")
             try:
                 delay = float(raw)
@@ -83,7 +86,17 @@ def normalize_error(exc: Exception) -> ProviderError:
     # SDK error codes are structured data; never parse human-readable messages.
     response = getattr(exc, "response", {})
     code = response.get("Error", {}).get("Code", "") if isinstance(response, dict) else ""
-    if code in {"ExpiredTokenException", "UnrecognizedClientException", "AccessDeniedException", "InvalidSignatureException"} or type(exc).__name__ in {"NoCredentialsError", "PartialCredentialsError", "RefreshError", "DefaultCredentialsError"}:
+    if code in {
+        "ExpiredTokenException",
+        "UnrecognizedClientException",
+        "AccessDeniedException",
+        "InvalidSignatureException",
+    } or type(exc).__name__ in {
+        "NoCredentialsError",
+        "PartialCredentialsError",
+        "RefreshError",
+        "DefaultCredentialsError",
+    }:
         return AuthenticationRequired("Provider credentials expired, missing or access denied")
     if code in {"ThrottlingException", "TooManyRequestsException"}:
         return RateLimited()

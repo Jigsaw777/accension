@@ -3,8 +3,12 @@
 This example is trusted Python code, not a sandbox. It does not invent model
 capabilities or claim that a configured deployment is reachable.
 """
+
 from local_ai_router.provider_sdk import (
-    ConfigField, InventoryResult, ProviderManifest, ProviderPlugin,
+    ConfigField,
+    InventoryResult,
+    ProviderManifest,
+    ProviderPlugin,
 )
 
 
@@ -21,19 +25,24 @@ class ExampleProvider(ProviderPlugin):
             inventory=False,
             default_endpoint="http://127.0.0.1:9000/v1",
             fields=[
-                ConfigField(name="endpoint", label="Loopback endpoint",
-                            default="http://127.0.0.1:9000/v1", required=True),
-                ConfigField(name="model_ids", label="Exact loaded model IDs",
-                            type="list", required=True),
+                ConfigField(
+                    name="endpoint", label="Loopback endpoint", default="http://127.0.0.1:9000/v1", required=True
+                ),
+                ConfigField(name="model_ids", label="Exact loaded model IDs", type="list", required=True),
             ],
         )
 
     async def discover_models(self, context):
         return InventoryResult(
-            models=[context.descriptor(
-                model_id, status="unknown", supports_chat_completions=True,
-                discovered_from="explicit_configuration",
-            ) for model_id in context.provider.model_ids],
+            models=[
+                context.descriptor(
+                    model_id,
+                    status="unknown",
+                    supports_chat_completions=True,
+                    discovered_from="explicit_configuration",
+                )
+                for model_id in context.provider.model_ids
+            ],
             complete=False,
             source="explicit_configuration",
             warnings=["Configured IDs are not verified deployments; test before use."],

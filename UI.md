@@ -1,6 +1,6 @@
 # Local UI
 
-Run accs ui (or accension/router ui) to open http://127.0.0.1:8765/ui. No sign-in or sign-out flow is shown. The loopback document bootstraps a local cookie session; CSRF, same-origin, Host and fetch-metadata checks remain. External API clients still need the API token. Reload after session expiry.
+Run `accs ui` to open the app at http://127.0.0.1:8765/ui. No Accension account is needed. The app runs on this computer and can manage settings before any model is connected. Reload the page if your local session expires. API clients use a separate local token; see [Security](SECURITY.md) for the technical details.
 
 Assets are bundled HTML/CSS/JavaScript with no Node build or CDN. Connected models are optional for management.
 

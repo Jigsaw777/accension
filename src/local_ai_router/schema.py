@@ -1,17 +1,24 @@
 """Typed, bounded contracts. No executable instructions are trusted from models."""
+
 from __future__ import annotations
-from typing import Literal, Any
+
+from typing import Any, Literal
 from uuid import uuid4
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 
 def uid() -> str:
     return uuid4().hex
 
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True, allow_inf_nan=False)
 
+
 class ModelDescriptor(Strict):
     """Canonical inventory record. Flat V1 fields remain accepted at the boundary."""
+
     id: str
     provider: str
     deployment_name: str
@@ -82,7 +89,11 @@ class ModelDescriptor(Strict):
             for name, value in nested.items():
                 field = "supports_" + name if key == "capabilities" else mapping.get(name, name)
                 data.setdefault(field, value)
-        if "pricing_status" not in data and data.get("input_price") is not None and data.get("output_price") is not None:
+        if (
+            "pricing_status" not in data
+            and data.get("input_price") is not None
+            and data.get("output_price") is not None
+        ):
             data["pricing_status"] = "user_supplied"
         return data
 
@@ -98,21 +109,63 @@ class ModelDescriptor(Strict):
         return all(bool(getattr(self, "supports_" + c, False)) for c in capabilities)
 
     def profile(self) -> dict:
-        """The V2 shape used by UI/SDK; no competing copy of mutable capabilities."""
+        """The descriptor shape used by UI/SDK; no competing copy of mutable capabilities."""
         return {
-            "id": self.id, "provider": self.provider, "remote_id": self.deployment_name,
-            "status": self.status, "locality": self.locality, "protocols": self.protocols,
-            "capabilities": {k.removeprefix("supports_"): getattr(self, k) for k in type(self).model_fields if k.startswith("supports_")},
+            "id": self.id,
+            "provider": self.provider,
+            "remote_id": self.deployment_name,
+            "status": self.status,
+            "locality": self.locality,
+            "protocols": self.protocols,
+            "capabilities": {
+                k.removeprefix("supports_"): getattr(self, k)
+                for k in type(self).model_fields
+                if k.startswith("supports_")
+            },
             "context": {"input": self.context_window, "output": self.max_output},
-            "economics": {k: getattr(self, k) for k in ("input_price", "output_price", "cached_input_price", "cache_write_price", "currency", "pricing_status", "pricing_source", "pricing_updated_at")},
-            "performance": {"latency": self.expected_latency, "ttft": self.ttft, "tokens_per_second": self.tokens_per_second, "reliability": self.reliability},
-            "quality": self.quality, "resource": {"ram_estimate": self.ram_estimate_mb, "vram_estimate": self.vram_estimate_mb, "loaded": self.loaded, "local_runtime": self.local_runtime},
-            "provenance": {k: getattr(self, k) for k in ("discovered_from", "capabilities_source", "pricing_source", "benchmarked_at", "discovered_at", "inventory_stale")},
+            "economics": {
+                k: getattr(self, k)
+                for k in (
+                    "input_price",
+                    "output_price",
+                    "cached_input_price",
+                    "cache_write_price",
+                    "currency",
+                    "pricing_status",
+                    "pricing_source",
+                    "pricing_updated_at",
+                )
+            },
+            "performance": {
+                "latency": self.expected_latency,
+                "ttft": self.ttft,
+                "tokens_per_second": self.tokens_per_second,
+                "reliability": self.reliability,
+            },
+            "quality": self.quality,
+            "resource": {
+                "ram_estimate": self.ram_estimate_mb,
+                "vram_estimate": self.vram_estimate_mb,
+                "loaded": self.loaded,
+                "local_runtime": self.local_runtime,
+            },
+            "provenance": {
+                k: getattr(self, k)
+                for k in (
+                    "discovered_from",
+                    "capabilities_source",
+                    "pricing_source",
+                    "benchmarked_at",
+                    "discovered_at",
+                    "inventory_stale",
+                )
+            },
         }
 
 
 # Import compatibility for V1 integrations.
 Model = ModelDescriptor
+
 
 class Provider(Strict):
     kind: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
@@ -143,6 +196,7 @@ class Provider(Strict):
     # An explicitly added private-network service is still remote for privacy policy.
     options: dict[str, str | int | bool] = {}
 
+
 class Classification(Strict):
     task_family: Literal["simple", "coding", "architecture", "critical", "explanation"] = "coding"
     complexity: int = Field(default=35, ge=0, le=100)
@@ -160,11 +214,22 @@ class Classification(Strict):
     planning_depth: Literal["NONE", "MICRO_PLAN", "IMPLEMENTATION_PLAN", "FULL_ARCHITECTURE_PLAN"] = "MICRO_PLAN"
     signals: dict[str, int | float | str | bool] = {}
 
+
 class Arbitration(Strict):
     model_id: str | None = None
     recommended_tier: int = Field(default=2, ge=1, le=4)
     planning_required: bool = True
-    reason_code: Literal["FRONTIER_REQUIRED", "LOCAL_SUFFICIENT", "CLOUD_CHEAP_SUFFICIENT", "ARCHITECTURE_PLANNER_REQUIRED", "ESCALATE_ONE_TIER", "STOP_ESCALATION", "BUDGET_OVERRIDE_ALLOWED", "NEEDS_HUMAN_APPROVAL"]
+    reason_code: Literal[
+        "FRONTIER_REQUIRED",
+        "LOCAL_SUFFICIENT",
+        "CLOUD_CHEAP_SUFFICIENT",
+        "ARCHITECTURE_PLANNER_REQUIRED",
+        "ESCALATE_ONE_TIER",
+        "STOP_ESCALATION",
+        "BUDGET_OVERRIDE_ALLOWED",
+        "NEEDS_HUMAN_APPROVAL",
+    ]
+
 
 class EgressBudget(Strict):
     max_cloud_context_tokens_per_request: int | None = Field(default=None, ge=0)
@@ -208,6 +273,19 @@ class TaskNode(Strict):
     max_cloud_files: int | None = Field(default=None, ge=0)
     fallbacks: list[str] = []
 
+
+class SkillBinding(Strict):
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class SkillContract(Strict):
+    skills: list[SkillBinding] = []
+    preset_id: str | None = None
+    suggestion_source: str = "explicit"
+    token_budget: int | None = Field(default=None, gt=0)
+
+
 class ExecutionPlan(Strict):
     plan_id: str = Field(default_factory=uid, pattern=r"^[A-Za-z0-9_-]{1,64}$")
     request_id: str = Field(default_factory=uid)
@@ -230,6 +308,7 @@ class ExecutionPlan(Strict):
     privacy_contract: Literal["LOCAL_ONLY", "CLOUD_REDACTED", "CLOUD_ALLOWED"] = "CLOUD_ALLOWED"
     egress_budget: EgressBudget = Field(default_factory=EgressBudget)
     quality_contract: float | None = Field(default=None, ge=0, le=1)
+    skill_contract: SkillContract = Field(default_factory=SkillContract)
 
     @model_validator(mode="after")
     def check_dag(self):
@@ -253,10 +332,12 @@ class ExecutionPlan(Strict):
             task.dependencies = sorted(dependencies[task.id])
         return self
 
+
 class FileChange(Strict):
     path: str
     content: str = Field(max_length=500_000)
     original_sha256: str | None = None
+
 
 class WorkerResult(Strict):
     status: Literal["complete", "blocked"]
@@ -268,9 +349,11 @@ class WorkerResult(Strict):
     confidence: float = Field(default=0.5, ge=0, le=1)
     escalation_requested: bool = False
 
+
 class Review(Strict):
     accepted: bool
     findings: list[str] = []
+
 
 class Request(Strict):
     task: str = Field(min_length=1, max_length=100000)
@@ -283,12 +366,17 @@ class Request(Strict):
     quality: float | None = Field(default=None, ge=0, le=1)
     max_cloud_context: int | None = Field(default=None, ge=0)
     max_cloud_files: int | None = Field(default=None, ge=0)
+    preset: str | None = None
+    skills: list[str] = []
+    skill_mode: Literal["manual", "auto", "off"] = "manual"
+
 
 class Usage(Strict):
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     cached_tokens: int = Field(default=0, ge=0)
     cache_write_tokens: int = Field(default=0, ge=0)
+
 
 class Generation(Strict):
     text: str = ""

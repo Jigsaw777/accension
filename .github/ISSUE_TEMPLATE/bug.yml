@@ -1,0 +1,25 @@
+name: Bug report
+description: Report a reproducible problem
+body:
+- type: markdown
+  attributes:
+    value: 'For vulnerabilities, use private reporting: https://github.com/Jigsaw777/accension/security/advisories/new.
+      Never include credentials or private code here.'
+- type: textarea
+  id: request
+  attributes:
+    label: What happened or what do you need?
+    description: Explain the expected behavior and why it matters.
+  validations:
+    required: true
+- type: textarea
+  id: details
+  attributes:
+    label: Steps, context and version
+    description: For bugs, include steps to reproduce, OS, Python and Accension version.
+      Remove private data.
+- type: textarea
+  id: checks
+  attributes:
+    label: What have you tried?
+    description: Share sanitized diagnostics or a small example when useful.

@@ -1,13 +1,14 @@
 """Bounded, loopback-only detection and durable provider inventory reconciliation."""
+
 from __future__ import annotations
 
 import asyncio
 import time
 from collections import deque
 
-from .schema import Model, Provider
-from .privacy import allowed_provider, is_local
 from .errors import normalize_error
+from .privacy import allowed_provider, is_local
+from .schema import Model, Provider
 
 
 class DiscoveryService:
@@ -19,10 +20,12 @@ class DiscoveryService:
 
     async def discover_local(self):
         s = self.engine.settings
+
         async def probe(name, endpoint):
             kind = "openai-compatible" if name == "local-openai" else name
             provider = Provider(kind=kind, endpoint=endpoint, local=True, auth="none")
             from .config import validate_endpoint
+
             validate_endpoint(provider, s.port)
             key = "detected-" + name
             try:
@@ -30,15 +33,27 @@ class DiscoveryService:
                 return key, provider, inventory, None
             except Exception as exc:
                 return key, provider, None, normalize_error(exc).code
-        results = await asyncio.gather(*(probe(name, endpoint) for name, endpoint in s.discovery.local_endpoints.items()))
+
+        results = await asyncio.gather(
+            *(probe(name, endpoint) for name, endpoint in s.discovery.local_endpoints.items())
+        )
         services = []
         for name, provider, inventory, error in results:
             if inventory is not None:
-                existing = next((key for key, value in s.providers.items() if value.endpoint.rstrip("/") == provider.endpoint.rstrip("/")), None)
+                existing = next(
+                    (
+                        key
+                        for key, value in s.providers.items()
+                        if value.endpoint.rstrip("/") == provider.endpoint.rstrip("/")
+                    ),
+                    None,
+                )
                 if existing:
                     name = existing
                     if not s.providers[name].enabled:
-                        services.append({"provider": name, "status": "detected_disabled", "models": len(inventory.models)})
+                        services.append(
+                            {"provider": name, "status": "detected_disabled", "models": len(inventory.models)}
+                        )
                         continue
                     for model in inventory.models:
                         model.provider = name
@@ -46,8 +61,18 @@ class DiscoveryService:
                 else:
                     s.providers[name] = provider
                 self.reconcile(name, inventory)
-            services.append({"provider": name, "status": "detected" if inventory is not None else "not_detected", "models": len(inventory.models) if inventory else 0, "error": error})
-        self.engine.store.metadata("detected-providers", {key: value.model_dump() for key, value in s.providers.items() if key.startswith("detected-")})
+            services.append(
+                {
+                    "provider": name,
+                    "status": "detected" if inventory is not None else "not_detected",
+                    "models": len(inventory.models) if inventory else 0,
+                    "error": error,
+                }
+            )
+        self.engine.store.metadata(
+            "detected-providers",
+            {key: value.model_dump() for key, value in s.providers.items() if key.startswith("detected-")},
+        )
         self.engine.store.metadata("local-services", services)
         return {"services": services, "scope": "loopback endpoints only"}
 
@@ -73,14 +98,29 @@ class DiscoveryService:
             model_id = provider_name + ":" + discovered.deployment_name
             active.add(model_id)
             old = existing.get(model_id)
-            values = {**s.discovery.model_defaults, **discovered.model_dump(exclude_unset=True), "id": model_id, "provider": provider_name}
+            values = {
+                **s.discovery.model_defaults,
+                **discovered.model_dump(exclude_unset=True),
+                "id": model_id,
+                "provider": provider_name,
+            }
             if old:
-                values.update(quality=old.quality, benchmarked_at=old.benchmarked_at, capability_evidence=old.capability_evidence)
+                values.update(
+                    quality=old.quality, benchmarked_at=old.benchmarked_at, capability_evidence=old.capability_evidence
+                )
                 for capability, evidence in old.capability_evidence.items():
                     if evidence.get("source") in {"active_probe", "user_override"}:
                         values["supports_" + capability] = bool(evidence.get("supported"))
                 if old.pricing_source == "user_supplied":
-                    for key in ("input_price", "output_price", "cached_input_price", "cache_write_price", "pricing_status", "pricing_source", "pricing_updated_at"):
+                    for key in (
+                        "input_price",
+                        "output_price",
+                        "cached_input_price",
+                        "cache_write_price",
+                        "pricing_status",
+                        "pricing_source",
+                        "pricing_updated_at",
+                    ):
                         values[key] = getattr(old, key)
             if is_local(s.providers[provider_name]):
                 values.update(tier=1, input_price=0, output_price=0)
@@ -112,11 +152,15 @@ class DiscoveryService:
         if not policy.enabled or s.mock:
             return {"status": "disabled"}
         async with self.lock:
-            if not force and time.monotonic()-self.last < policy.interval_seconds:
+            if not force and time.monotonic() - self.last < policy.interval_seconds:
                 return self.status
             self.last = time.monotonic()
             services = None
-            if policy.local_scan and not policy.inventory_providers and not any(p.enabled and p.local for p in s.providers.values()):
+            if (
+                policy.local_scan
+                and not policy.inventory_providers
+                and not any(p.enabled and p.local for p in s.providers.values())
+            ):
                 services = await self.discover_local()
             names = set(policy.inventory_providers)
             names.update(name for name, provider in s.providers.items() if provider.enabled and provider.inventory)
@@ -125,6 +169,7 @@ class DiscoveryService:
                     raise ValueError("Unknown provider instance")
                 names = {provider_name}
             status, added, warnings = {}, [], []
+
             async def refresh_one(name):
                 provider = s.providers.get(name)
                 if not provider or not provider.enabled:
@@ -146,9 +191,15 @@ class DiscoveryService:
                         if model.provider == name:
                             model.inventory_stale = True
                             store.save_model(model)
+
             await asyncio.gather(*(refresh_one(name) for name in sorted(names)))
-            self.status = {"providers": status, "added": added, "warnings": warnings, "local": services,
-                           "pricing_policy": "Unknown cloud prices excluded unless explicitly permitted with a reservation allowance"}
+            self.status = {
+                "providers": status,
+                "added": added,
+                "warnings": warnings,
+                "local": services,
+                "pricing_policy": "Unknown cloud prices excluded unless explicitly permitted with a reservation allowance",
+            }
             store.metadata("discovery-status", self.status)
             return self.status
 

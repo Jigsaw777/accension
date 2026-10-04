@@ -1,5 +1,7 @@
 # Codex setup
 
+Connect Codex to Accension to delegate repository tasks while keeping the host conversation in Codex. Preview the connection first, then apply it to the client you use.
+
 ## Companion MCP
 
 ```sh
