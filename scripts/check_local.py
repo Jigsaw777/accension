@@ -38,8 +38,10 @@ def main():
         result = subprocess.run([sys.executable, *command], check=False)
         if result.returncode:
             raise SystemExit(result.returncode)
-    zizmor = shutil.which("zizmor")
-    if not zizmor:
+    zizmor = shutil.which("zizmor") or str(
+        Path(sys.executable).with_name("zizmor.exe" if sys.platform == "win32" else "zizmor")
+    )
+    if not Path(zizmor).is_file():
         raise SystemExit("Install .[dev] to run the required workflow security check")
     subprocess.run([zizmor, "--offline", "--min-severity", "medium", ".github/workflows"], check=True)
     print("All requested local checks passed")
