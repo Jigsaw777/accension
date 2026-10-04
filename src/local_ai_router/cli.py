@@ -34,7 +34,7 @@ async def dispatch(args, settings):
             if args.action == "path":
                 return {"path": str(engine.store.log.path)}
             if args.action == "export":
-                return export_bundle(settings, args.output or args.value or "accension-diagnostics.zip")
+                return export_bundle(settings, args.output or args.value or "accension-diagnostics.zip", engine=engine)
             filters = {
                 "level": args.level,
                 "component": args.component,
@@ -178,7 +178,7 @@ async def dispatch(args, settings):
             if args.bundle:
                 from .observability import export_bundle
 
-                result["bundle"] = export_bundle(settings, args.bundle)
+                result["bundle"] = export_bundle(settings, args.bundle, engine=engine, diagnostic=result)
             return result
         if args.command == "models":
             return [m.model_dump() for m in settings.models]

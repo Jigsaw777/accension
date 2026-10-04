@@ -1,6 +1,7 @@
 name: CI
 'on':
-  push: null
+  push:
+    branches: [main]
   pull_request: null
   workflow_call: null
   workflow_dispatch: null
@@ -8,6 +9,9 @@ name: CI
   - cron: 23 4 * * 1
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   quality:
     name: Code and documentation

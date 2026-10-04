@@ -20,6 +20,8 @@ Signed commits are strongly recommended, but are not mandatory for contributors'
 
 `Merge Gate` depends on code/docs checks, all nine Ubuntu/Windows/macOS × Python 3.11/3.12/3.13 test jobs, Python and JavaScript CodeQL, dependency audit, PR dependency review, secret audit, workflow security and clean wheel installation. Failed, cancelled or unexpectedly skipped checks block the gate. Only dependency review is skipped outside PR events.
 
+CI runs on pull requests, pushes to main, scheduled audits and manual runs. New PR commits cancel outdated runs for that PR. Feature-branch pushes do not start a duplicate matrix alongside the PR run.
+
 Ruff checks syntax, unused imports, common mistakes and formatting. Bandit blocks medium/high-severity findings with high confidence. `pip-audit` checks installed dependencies, including optional provider integrations. There are no vulnerability-ID exceptions. The editable project itself is skipped because it is local source, not a published dependency. Dependabot proposes weekly dependency and Actions updates; it cannot auto-merge them.
 
 Tests use mock providers and block unexpected external socket connections in the test process. They require no paid provider keys. Subprocess validation remains trusted repository code; run tests for untrusted contributions in an isolated environment. CodeQL receives only the permissions needed for code scanning. No PR workflow uses `pull_request_target`, stored cloud credentials, persistent checkout credentials or a repository write token. Actions are pinned to full SHAs; zizmor checks the workflows offline.

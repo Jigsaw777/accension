@@ -4,6 +4,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 
 def main():
@@ -17,7 +18,14 @@ def main():
         ["scripts/security_policy.py"],
         ["scripts/check_docs.py"],
         ["-m", "bandit", "-r", "src", "scripts", "-ll", "-iii"],
-        ["-m", "pytest", "-q", "--cov", "--cov-report=term:skip-covered"],
+        [
+            "-m",
+            "pytest",
+            "-q",
+            "--cov",
+            "--cov-report=term:skip-covered",
+            "--basetemp=" + str(Path(__file__).resolve().parents[1] / ".router" / "pytest-local-check"),
+        ],
     ]
     if args.full:
         commands += [

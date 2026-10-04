@@ -204,7 +204,7 @@ def read_logs(settings, *, limit=100, level=None, component=None, run=None, sinc
     return list(items)
 
 
-def export_bundle(settings, output):
+def export_bundle(settings, output, *, engine=None, diagnostic=None):
     from . import __version__
 
     # Explicit allowlist: never archive config, vaults, state DBs, source or skill files.
@@ -213,21 +213,40 @@ def export_bundle(settings, output):
         {k: redact(v) for k, v in item.items() if k in FIELDS | {"timestamp", "level", "component", "event"}}
         for item in items
     ]
+    summary = {
+        "version": __version__,
+        "python": platform.python_version(),
+        "system": platform.system(),
+        "machine": platform.machine(),
+        "created_at": time.time(),
+        "mock": settings.mock,
+        "providers": len(settings.providers),
+        "models": len(settings.models),
+        "repositories": len(settings.repositories),
+        "fully_local": settings.control_plane.fully_local,
+    }
+    if engine:
+        # Read cached health only. Exporting logs must not contact providers.
+        states = {"UNKNOWN", "HEALTHY", "AUTH_REQUIRED", "RATE_LIMITED", "DEGRADED", "UNAVAILABLE"}
+        summary["provider_health"] = [
+            {"provider": redact(name), "status": state if state in states else "UNKNOWN"}
+            for name in settings.providers
+            for state in [engine.store.provider_health(name)["status"]]
+        ]
+        summary["skills"] = engine.skills.list(limit=1)["total"]
+        summary["presets"] = engine.skills.presets(limit=1)["total"]
+        summary["logging"] = {k: v for k, v in engine.store.log.status().items() if k != "directory"}
+    if diagnostic:
+        summary["doctor"] = {
+            "database_ok": diagnostic.get("database") == "ok",
+            "gateway_healthy": bool(diagnostic.get("gateway", {}).get("healthy")),
+            "missing_skill_paths": len(diagnostic.get("skills", {}).get("missing_paths", [])),
+            "log_writable": bool(diagnostic.get("logging", {}).get("writable")),
+        }
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("logs.json", json.dumps(safe_items, indent=2))
         archive.writestr(
             "diagnostics.json",
-            json.dumps(
-                {
-                    "version": __version__,
-                    "python": platform.python_version(),
-                    "system": platform.system(),
-                    "machine": platform.machine(),
-                    "created_at": time.time(),
-                    "mock": settings.mock,
-                    "providers": len(settings.providers),
-                    "models": len(settings.models),
-                }
-            ),
+            json.dumps(redact(summary)),
         )
     return {"exported": str(Path(output).resolve()), "note": "Review the redacted bundle before sharing it"}

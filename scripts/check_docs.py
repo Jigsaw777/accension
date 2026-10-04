@@ -29,6 +29,12 @@ def check(root=ROOT):
             failures.append(name + ": unclosed Markdown fence")
         if re.search(r"\bAccension V[23]\b|\bV[23] (?:is|integration|release|role)|MIGRATION_V1_V2", text, re.I):
             failures.append(name + ": obsolete public version wording")
+        if re.search(
+            r"(?:create|register|sign up for|log in to|sign in to) (?:an? |your )?Accension (?:account|dashboard)",
+            text,
+            re.I,
+        ):
+            failures.append(name + ": obsolete Accension account instruction; use the local app")
         for link in re.findall(r"\]\(([^)]+)\)", text):
             target = unquote(link.split("#")[0].split(' "')[0].strip("<>"))
             if target and not re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I) and not (path.parent / target).exists():

@@ -22,4 +22,4 @@ Each event includes a timestamp, level, component and event name. Request, run, 
 
 Logs discard prompts, source, skill text, provider bodies and unknown payload fields. Central redaction covers common credential patterns, authentication headers, passwords, cookies, vault fields, signed URL queries and personal paths. Debug output does not disable these protections. Redaction is a safeguard, not a guarantee for every possible secret format.
 
-Open **Logs** in the UI to filter events, copy an ID or open its task trace. A diagnostic export contains redacted event metadata and basic version/runtime configuration counts. It excludes vaults, tokens, configuration files, databases, repositories and skill files. Review the bundle before sharing it.
+Open **Logs** in the UI to filter events, copy an ID or open its task trace. A diagnostic export contains redacted event metadata, OS/Python/version details, configuration counts and cached provider health. `doctor --bundle` adds a bounded check summary. Log export makes no provider calls. It excludes vaults, tokens, configuration files, databases, repository source and skill files. Review the bundle before sharing it.

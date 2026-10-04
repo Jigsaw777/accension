@@ -62,6 +62,13 @@ async def test_cli_skill_preset_lifecycle_and_logs(settings, tmp_path):
     bundle = tmp_path / "diagnostics.zip"
     await command("doctor", "--bundle", str(bundle))
     assert bundle.exists()
+    import zipfile
+
+    with zipfile.ZipFile(bundle) as archive:
+        info = json.loads(archive.read("diagnostics.json"))
+    assert info["doctor"]["database_ok"] and info["presets"] == 1
+    assert info["provider_health"][0]["status"] in {"UNKNOWN", "HEALTHY"}
+    assert str(settings.home) not in json.dumps(info)
     assert isinstance(await command("logs", "tail"), list)
 
 
