@@ -30,7 +30,8 @@ def install(directory):
     expected = CHECKSUMS[suffix]
     name = "gitleaks_" + VERSION + "_" + suffix
     url = "https://github.com/gitleaks/gitleaks/releases/download/v" + VERSION + "/" + name
-    with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310: fixed HTTPS host and pinned artifact hash
+    # Fixed HTTPS host; downloaded bytes must match the pinned artifact hash.
+    with urllib.request.urlopen(url, timeout=60) as response:  # nosec B310
         data = response.read(30_000_001)
     if len(data) > 30_000_000 or hashlib.sha256(data).hexdigest() != expected:
         raise ValueError("Gitleaks download failed its pinned checksum check")

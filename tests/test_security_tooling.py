@@ -49,6 +49,33 @@ def test_public_scanner_private_paths_and_fake_patterns():
     assert scan.RULES["provider_token"].search(fake)
 
 
+def test_codeql_alert_gate_rejects_security_findings_without_leaking_code():
+    checker = module("check_codeql")
+    document = {
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "rules": [
+                            {"id": "security", "properties": {"security-severity": "4.0"}},
+                            {"id": "low", "properties": {"security-severity": "1.0"}},
+                            {"id": "correctness", "defaultConfiguration": {"level": "error"}},
+                        ]
+                    }
+                },
+                "results": [
+                    {"ruleId": name, "message": {"text": "private source excerpt"}}
+                    for name in ("security", "low", "correctness")
+                ],
+            }
+        ]
+    }
+    blocked = checker.findings(document)
+    assert [row["rule"] for row in blocked] == ["security", "correctness"]
+    assert "private source" not in str(blocked)
+    assert checker.findings({"runs": []}) == []
+
+
 def test_github_rules_owner_bypass_cannot_skip_checks_or_push_directly():
     security = module("configure_github_security")
     review, integrity = security.desired_rules()
