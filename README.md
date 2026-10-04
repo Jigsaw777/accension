@@ -17,6 +17,8 @@ Ordinary gateway chat stays on a direct forwarding path; it does not compile a D
 
 Use local models, cloud models, or both. Keep routing, budgets, configuration, task graphs and history on your computer. No Accension account, hosted backend, telemetry, particular vendor or local LLM is required. With no connected models, setup, provider configuration, route simulation and diagnostics still work.
 
+[Install](#install-and-start-in-the-terminal) · [CLI commands and help](#cli-commands-and-help) · [Modes](#companion-and-sovereign-modes) · [Savings](#savings-pulse) · [Developer install](#developer-install) · [Guides](#guides)
+
 ## Install and start in the terminal
 
 Requires Python 3.11+. From a downloaded source checkout on Windows, Linux or macOS, choose one:
@@ -92,6 +94,10 @@ accs lab compare RUN_ID
 
 The primary CLI is **`accs`**. Compatibility names **`accension`**, **`router`**, Python **`local_ai_router`**, and MCP **`local-ai-router`** remain supported. See [CLI reference](docs/CLI.md) and [V1 migration](MIGRATION_V1_V2.md).
 
+## CLI commands and help
+
+Running `accs` without a command opens the UI. Use the commands below for a terminal-only workflow. Replace `PROVIDER:MODEL`, `RUN_ID`, `PLAN_ID`, `SESSION_ID` and `QUOTE_ID` with IDs returned by your local installation. Examples that execute tasks require a registered repository and eligible models; quoted goals are examples for your own project.
+
 | Command families | Purpose |
 |---|---|
 | `init`, `doctor`, `start`, `status`, `stop` | Configure and operate the local hub |
@@ -99,6 +105,208 @@ The primary CLI is **`accs`**. Compatibility names **`accension`**, **`router`**
 | `route`, `plan`, `execute`, `run` | Preview or execute repository work |
 | `receipt`, `trace`, `savings`, `lab`, `recovery` | Inspect results, accounting and recovery |
 | `integrate`, `launch`, `config`, `plugin`, `completion` | Integrate clients and automate management |
+
+### Find help and control output
+
+```sh
+accs --help
+accs --version
+accs init --help
+accs provider add --help
+accs model dna --help
+accs run --help
+accs integrate --help
+accs savings --help
+```
+
+`--help` exits after showing accepted arguments; it does not initialize configuration, call a provider or execute a task. Command-family help also lists available actions. The installed command's help is authoritative for that version. [Captured CLI output examples](docs/EXAMPLES.md) show help, a route, Model DNA and a receipt.
+
+| Common option | Use |
+|---|---|
+| `--home PATH` | Select a configuration/state home; overrides `ROUTER_HOME` |
+| `--json` | Emit machine-readable results on stdout; progress and errors use stderr |
+| `--no-color` | Request plain output; output is already uncolored by default |
+| `--debug` | Include a redacted traceback for troubleshooting |
+| `--mock` | Use deterministic fixture models for development and demos |
+
+Common options work before the command or after its name. For automation, use explicit inputs and `--non-interactive` with `init` or `provider add`:
+
+```sh
+accs init --non-interactive --mode sovereign --preset fully-local --repo . --validation python-unittest
+accs --json provider list
+accs model list --json
+accs --home ./accension-config doctor
+```
+
+Choose `--validation python-pytest` or `npm-test` when those match the repository. Setup records trusted validation commands; it does not install the project's dependencies. Use a separate home for isolated demos or tests.
+
+### Connect providers and inspect models
+
+```sh
+accs provider list
+accs provider add ollama
+accs provider add openrouter --name team-cloud --credential-env OPENROUTER_API_KEY --non-interactive
+accs provider add custom --name local-server --endpoint http://127.0.0.1:8080/v1 --protocol openai --local --non-interactive
+accs provider test team-cloud
+accs provider refresh team-cloud
+```
+
+Set `OPENROUTER_API_KEY` in your environment before connecting that instance. Interactive provider setup can store a hidden key entry in the OS vault; `--credential-env` stores the environment reference. `provider test` defaults to health/metadata checks. Generating a test response requires `--inference`; cloud testing also requires `--allow-paid` and a budget.
+
+Provider add supports named instances, groups (`--group`), model filters (`--include-model`, `--exclude-model`), and native-auth fields such as region, profile and project. See `accs provider add --help` and the [provider guide](PROVIDERS.md).
+
+```sh
+accs model list --offset 0 --limit 50
+accs model list --provider local-server
+accs model search coder
+accs model info PROVIDER:MODEL
+accs model dna PROVIDER:MODEL
+accs model refresh --provider local-server
+```
+
+Use the exact model ID from the list, including its provider instance. JSON list output includes `next_offset` when more results exist. Refresh discovers metadata; it does not benchmark the whole catalog. `model enable` and `model disable` change eligibility, while `model dna PROVIDER:MODEL --reset` clears that model's learned evidence.
+
+```sh
+accs role list
+accs role explain executor
+accs role set executor PROVIDER:MODEL
+accs role auto executor
+accs role reset executor
+```
+
+`role set` pins a model; `role auto` returns selection to the resolver; `role reset` restores the role defaults. Pinning never bypasses privacy, capability or budget checks.
+
+### Register a repository and execute work
+
+```sh
+accs repo list
+accs repo add . --privacy LOCAL_ONLY --check 'tests=["{python}","-m","unittest","discover","-v"]'
+accs route "Add a greeting feature with tests" --repo . --local-only --explain
+accs run "Add a greeting feature with tests" --repo . --local-only --budget 0.25
+```
+
+Validation values are argument arrays, not shell snippets. Register the test/build command appropriate to the project. `LOCAL_ONLY` prevents cloud inference for that repository. `CLOUD_REDACTED` and `CLOUD_ALLOWED` are explicit alternatives; task policy can make repository policy stricter, never weaker.
+
+To review a portable plan before execution:
+
+```sh
+accs plan "Refactor authentication" --repo . --export auth.axir.json
+accs inspect auth.axir.json
+accs reroute auth.axir.json
+accs plan diff old.axir.json new.axir.json
+accs execute auth.axir.json --repo .
+```
+
+Planning may use a model. Inspect/diff/reroute inspect or preview the artifact without applying repository edits. Execution rechecks repository fingerprints, contracts and registered validation. `accs run ... --dry-run` is a route-only preview; `--mode plan-only` compiles without applying the plan.
+
+| Run/plan option | Meaning |
+|---|---|
+| `--budget 0.25` | Maximum request API budget in USD, also bounded by configured limits |
+| `--local-only` or `--privacy LOCAL_ONLY` | Restrict the task to local models |
+| `--max-cloud-context 12000` | Bound estimated cloud context tokens for the request |
+| `--quality 0.93` | Set the task's minimum quality contract (0–1) |
+| `--constraint "Keep the public API"` | Add an explicit constraint; repeat as needed |
+| `--session SESSION_ID` | Group calls under a session for budgets and accounting |
+
+Use the execution result's `plan_id` as `RUN_ID` or `PLAN_ID` below to inspect the outcome or recover interrupted work. `recovery list` also shows this value as `id`:
+
+```sh
+accs trace RUN_ID
+accs receipt RUN_ID
+accs receipt RUN_ID --markdown --output receipt.md
+accs recovery list
+accs recovery inspect PLAN_ID
+accs resume RUN_ID
+accs rollback RUN_ID
+```
+
+Resume requires a valid unfinished checkpoint. Rollback only restores unchanged router-written files; later user edits are preserved. [Receipt guide](docs/EXECUTION_RECEIPTS.md) · [AXIR guide](docs/AXIR.md).
+
+### Inspect costs, savings and model evidence
+
+```sh
+accs costs
+accs savings --today
+accs savings --7d
+accs savings --30d
+accs savings --all --json
+accs savings --session SESSION_ID
+accs savings --run RUN_ID
+accs savings --run RUN_ID --reprice
+accs lab compare RUN_ID
+```
+
+`costs` shows the conservative reservation ledger. `savings` reads receipt-based analytics; dollar savings require a configured cloud baseline. Repricing returns separate current-price analysis while keeping historical receipts unchanged. Lab estimates alternative routes from existing evidence, with no paid shadow calls.
+
+```sh
+accs calibrate preview --model PROVIDER:MODEL --budget 0.05
+accs calibrate run --quote-id QUOTE_ID --allow-paid
+accs calibrate --quick --local-only
+accs model probe PROVIDER:MODEL --capability text --budget 0.01 --allow-paid
+```
+
+Review the calibration quote before running it. `--allow-paid` explicitly permits cloud calls within the stated/configured budgets. Quick local calibration requires eligible local models and makes no cloud calls.
+
+### Integrate clients and maintain configuration
+
+```sh
+accs mode
+accs mode companion
+accs integrate list
+accs integrate codex --mode companion
+accs integrate codex --mode companion --apply
+accs integrate undo codex
+accs launch codex --dry-run
+accs launch codex --direct
+```
+
+Integration commands preview by default. `--apply` installs the reviewed configuration with a backup; undo checks that the managed content has not been changed. Launcher dry-run checks installed client capabilities without opening an agent. `--direct` bypasses the gateway. See [Companion and Sovereign modes](#companion-and-sovereign-modes) for gateway launchers and Claude clients.
+
+```sh
+accs config validate
+accs config export --file profile.json
+accs config import --file profile.json
+accs config migrate
+accs cache stats
+accs cache clear
+accs plugin list
+accs plugin info openai-compatible
+```
+
+Export/import operates on declarative routing profiles, not credentials or executable plugin trust. Cache clearing preserves receipts and savings. To disconnect an instance, use `accs provider remove INSTANCE_ID`; review affected role assignments afterward.
+
+### Shell completion, exit codes and troubleshooting
+
+```sh
+accs completion bash
+accs completion zsh
+accs completion fish
+accs completion powershell
+```
+
+Completion prints a script for the chosen shell; save/source it using that shell's profile mechanism. It completes command names, not every provider or model ID.
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Completed |
+| `2` | Invalid input/configuration or missing resource |
+| `3` | Provider failure |
+| `4` | Privacy or budget refusal |
+| `5` | Execution/validation or unclassified failure |
+| `6` | Service/network/OS failure; `status` reports a stopped hub |
+| `130` | User interruption |
+
+Launched clients propagate their own nonzero exit code. With `--json`, runtime errors include `error`, `type` and `exit_code`. Unknown commands and argument syntax errors still print standard argparse usage/error text to stderr and exit with code 2. For diagnostics:
+
+```sh
+accs doctor
+accs status --json
+accs --debug doctor
+```
+
+For an unknown model, start with `accs model list` or refresh its provider. For a stopped hub, use `accs start`. For rejected inputs, run the relevant `--help`. For execution failures, inspect the trace and receipt before resuming. Share redacted diagnostics and the installed version when [opening an issue](https://github.com/Jigsaw777/accension/issues).
+
+The [complete CLI reference](docs/CLI.md) also covers compatibility commands such as `models`, `discover`, `integration`, `profiles`, `eval`, `azure-login`, `enroll` and `demo`. See [troubleshooting](TROUBLESHOOTING.md) for provider/authentication and recovery details.
 
 ## Execution compiler features
 

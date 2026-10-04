@@ -127,4 +127,4 @@ Legacy commands: discover, models, integration preview/install, recovery list/in
 | 6 | Service/network/OS failure; status reports stopped |
 | 130 | User interruption |
 
-Launched clients propagate their own nonzero status. JSON failures include error, type and exit_code.
+Launched clients propagate their own nonzero status. With `--json`, runtime failures include error, type and exit_code. Unknown commands and argument syntax errors still print standard argparse usage/error text to stderr and exit with code 2.
