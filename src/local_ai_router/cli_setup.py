@@ -1,4 +1,5 @@
 """Terminal setup with non-echo credentials and explicit automation equivalents."""
+
 import getpass
 import json
 import sys
@@ -29,9 +30,15 @@ def provider_add(manager, args):
             fields[key] = json.loads(value)
         except ValueError:
             fields[key] = value
-    for key, value in {"endpoint": args.endpoint, "api_key_env": args.credential_env, "region": args.region,
-                       "profile": args.profile, "project": args.project, "auth": args.auth,
-                       "protocol": PROTOCOLS.get(args.protocol, args.protocol)}.items():
+    for key, value in {
+        "endpoint": args.endpoint,
+        "api_key_env": args.credential_env,
+        "region": args.region,
+        "profile": args.profile,
+        "project": args.project,
+        "auth": args.auth,
+        "protocol": PROTOCOLS.get(args.protocol, args.protocol),
+    }.items():
         if value is not None:
             fields[key] = value
     if args.group:
@@ -45,6 +52,7 @@ def provider_add(manager, args):
         fields.setdefault("auth", "none")
     elif kind in {"openai-compatible", "anthropic-compatible"} and args.endpoint:
         from urllib.parse import urlparse
+
         if urlparse(args.endpoint).hostname in {"127.0.0.1", "localhost", "::1"}:
             fields["local"] = True
             fields.setdefault("auth", "none")
@@ -64,7 +72,9 @@ def provider_add(manager, args):
                     fields[field.name] = value
     secret = None
     auth = fields.get("auth", manifest.authentication[0])
-    credential_configured = fields.get("api_key_env") or (name in manager.settings.providers and manager.settings.providers[name].credential_ref)
+    credential_configured = fields.get("api_key_env") or (
+        name in manager.settings.providers and manager.settings.providers[name].credential_ref
+    )
     if args.api_key or (interactive and auth == "api_key" and not credential_configured):
         if not sys.stdin.isatty():
             raise ValueError("API key prompts require a terminal; use --credential-env NAME in automation")
@@ -85,22 +95,56 @@ def initialize(manager, args):
         if repo and not check:
             check = prompt("Validation: python-unittest, python-pytest, npm-test, or none", "python-unittest")
     from .config import ControlPlane
+
     ControlPlane(mode=mode)
     manager.set_policy({"preset": preset, "control_plane": {"mode": mode}})
     registered = None
     if repo:
-        checks = {"python-unittest": {"tests": ["{python}", "-m", "unittest", "discover", "-v"]},
-                  "python-pytest": {"tests": ["{python}", "-m", "pytest", "-q"]}, "npm-test": {"tests": ["npm", "test"]}, "none": {}}
+        checks = {
+            "python-unittest": {"tests": ["{python}", "-m", "unittest", "discover", "-v"]},
+            "python-pytest": {"tests": ["{python}", "-m", "pytest", "-q"]},
+            "npm-test": {"tests": ["npm", "test"]},
+            "none": {},
+        }
         if check not in checks:
             raise ValueError("Select --validation python-unittest, python-pytest, npm-test, or none")
         manager.register_repository(repo, args.privacy, checks[check])
         registered = str(Path(repo).resolve())
     provider = None
-    kind = args.provider or (prompt("Provider kind (ollama/openrouter/aws/vertex/azure; blank skips)") if interactive else None)
+    kind = args.provider or (
+        prompt("Provider kind (ollama/openrouter/aws/vertex/azure; blank skips)") if interactive else None
+    )
     if kind:
         from argparse import Namespace
-        provider = provider_add(manager, Namespace(name=kind, kind=None, instance_name=args.name, field=[], endpoint=args.endpoint,
-            credential_env=args.credential_env, region=args.region, profile=None, project=args.project, auth=None, protocol=None,
-            group=[], include_model=[], exclude_model=[], local=False, non_interactive=not interactive, api_key=False))
-    return {"status": "initialized", "home": str(manager.settings.home), "mode": mode, "preset": preset,
-            "repository": registered, "provider": provider, "next": "accs doctor; accs provider add ollama; accs model refresh"}
+
+        provider = provider_add(
+            manager,
+            Namespace(
+                name=kind,
+                kind=None,
+                instance_name=args.name,
+                field=[],
+                endpoint=args.endpoint,
+                credential_env=args.credential_env,
+                region=args.region,
+                profile=None,
+                project=args.project,
+                auth=None,
+                protocol=None,
+                group=[],
+                include_model=[],
+                exclude_model=[],
+                local=False,
+                non_interactive=not interactive,
+                api_key=False,
+            ),
+        )
+    return {
+        "status": "initialized",
+        "home": str(manager.settings.home),
+        "mode": mode,
+        "preset": preset,
+        "repository": registered,
+        "provider": provider,
+        "next": "accs doctor; accs provider add ollama; accs model refresh",
+    }

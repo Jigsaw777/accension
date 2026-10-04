@@ -1,28 +1,46 @@
 """SQLite WAL cache, traces, budget reservations and gradual quality estimates."""
+
 from __future__ import annotations
-import hashlib, json, sqlite3, threading, time
+
+import hashlib
+import json
+import math
+import sqlite3
+import threading
+import time
 from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
+
 from .config import Settings
+
 
 class BudgetExceeded(RuntimeError):
     pass
 
+
 def cache_key(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+
 
 class Store:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.db = sqlite3.connect(settings.state / "router.sqlite3", timeout=10, check_same_thread=False, isolation_level=None)
+        from .observability import EventLog
+
+        self.log = EventLog(settings)
+        self.db = sqlite3.connect(
+            settings.state / "router.sqlite3", timeout=10, check_same_thread=False, isolation_level=None
+        )
         self.db.row_factory = sqlite3.Row
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version < 3 and self.db.execute("SELECT 1 FROM sqlite_master WHERE name='calls'").fetchone():
             backup = settings.state / "backups"
             backup.mkdir(exist_ok=True)
-            with sqlite3.connect(backup / ("state-v" + str(version) + "-" + str(time.time_ns()) + ".sqlite3")) as target:
+            with sqlite3.connect(
+                backup / ("state-v" + str(version) + "-" + str(time.time_ns()) + ".sqlite3")
+            ) as target:
                 self.db.backup(target)
         self.lock = threading.RLock()
         # In-process activity is separate from durable uncertain charges. A killed
@@ -32,7 +50,7 @@ class Store:
         self.hits = self.misses = 0
         self.trace_listener = None
         self.savings = None
-        self.db.executescript('''
+        self.db.executescript("""
         PRAGMA journal_mode=WAL;
         PRAGMA busy_timeout=10000;
         CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL, expires REAL NOT NULL);
@@ -77,7 +95,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS savings_revision(id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER);
         INSERT OR IGNORE INTO savings_revision VALUES(1,0);
         PRAGMA user_version=3;
-        ''')
+        """)
 
     @contextmanager
     def transaction(self):
@@ -92,6 +110,7 @@ class Store:
 
     def close(self):
         self.db.close()
+        self.log.close()
 
     def economics(self, method, *args, **kwargs):
         """Optional analytics must never change inference or repository outcomes."""
@@ -110,23 +129,32 @@ class Store:
                         stamp_day = datetime.now(timezone.utc).date().isoformat()
                         if method == "reserve":
                             call, request, session = args[:3]
-                            covered = self.db.execute("SELECT 1 FROM savings_runs WHERE request IN (?,?) AND status!='final'", (call, request)).fetchone()
+                            covered = self.db.execute(
+                                "SELECT 1 FROM savings_runs WHERE request IN (?,?) AND status!='final'", (call, request)
+                            ).fetchone()
                         elif method == "settle":
                             call = args[0]
                             ledger = self.db.execute("SELECT session,day FROM calls WHERE id=?", (call,)).fetchone()
                             session, stamp_day = ledger["session"], ledger["day"]
-                            group = self.db.execute("SELECT s.request,s.status FROM usage_records u JOIN savings_runs s ON s.request=u.request WHERE u.call=?", (call,)).fetchone()
+                            group = self.db.execute(
+                                "SELECT s.request,s.status FROM usage_records u JOIN savings_runs s ON s.request=u.request WHERE u.call=?",
+                                (call,),
+                            ).fetchone()
                             covered = group and group["status"] == "final"
                             if group:
                                 call = group["request"]
                         else:
                             call = args[0]["request_id"] if method == "finalize" else args[0]
-                            group = self.db.execute("SELECT session,day,status FROM savings_runs WHERE request=?", (call,)).fetchone()
+                            group = self.db.execute(
+                                "SELECT session,day,status FROM savings_runs WHERE request=?", (call,)
+                            ).fetchone()
                             session, stamp_day = (group["session"], group["day"]) if group else ("default", stamp_day)
                             covered = group and group["status"] == "final"
                         if not covered:
-                            self.db.execute("INSERT OR IGNORE INTO savings_gaps VALUES(?,?,?,?)",
-                                (call, session, stamp_day, time.time()))
+                            self.db.execute(
+                                "INSERT OR IGNORE INTO savings_gaps VALUES(?,?,?,?)",
+                                (call, session, stamp_day, time.time()),
+                            )
                             self.db.execute("UPDATE savings_revision SET value=value+1 WHERE id=1")
                 except Exception:
                     pass  # A database outage must not take down inference.
@@ -171,11 +199,18 @@ class Store:
         with self.lock:
             self.db.execute("INSERT OR REPLACE INTO cache VALUES(?,?,?)", (key, payload, expiry))
             self.db.execute("DELETE FROM cache WHERE expires<?", (time.time(),))
-            self.db.execute("DELETE FROM cache WHERE key IN (SELECT key FROM cache ORDER BY expires DESC LIMIT -1 OFFSET ?)", (self.settings.cache.max_entries,))
+            self.db.execute(
+                "DELETE FROM cache WHERE key IN (SELECT key FROM cache ORDER BY expires DESC LIMIT -1 OFFSET ?)",
+                (self.settings.cache.max_entries,),
+            )
             self._hot(key, payload, expiry)
 
     def cache_stats(self):
-        return {"entries": self.db.execute("SELECT COUNT(*) FROM cache").fetchone()[0], "process_hits": self.hits, "process_misses": self.misses}
+        return {
+            "entries": self.db.execute("SELECT COUNT(*) FROM cache").fetchone()[0],
+            "process_hits": self.hits,
+            "process_misses": self.misses,
+        }
 
     def clear_cache(self):
         with self.lock:
@@ -185,78 +220,147 @@ class Store:
     def trace(self, request: str, stage: str, **data):
         # Call sites provide metadata only. Defense in depth removes secret-like keys/values.
         from .safety import redact
+
+        self.log.emit("execution", stage, request_id=request, **{k: v for k, v in data.items() if k != "request_id"})
         with self.lock:
-            self.db.execute("INSERT INTO traces(request,stage,stamp,data) VALUES(?,?,?,?)", (request, stage, time.time(), json.dumps(redact(data), default=str)))
+            self.db.execute(
+                "INSERT INTO traces(request,stage,stamp,data) VALUES(?,?,?,?)",
+                (request, stage, time.time(), json.dumps(redact(data), default=str)),
+            )
         if self.trace_listener:
             self.trace_listener({"stage": stage, "request": request, **redact(data)})
         self.economics("trace", request, stage, data)
 
     def traces(self, request: str):
-        return [{"stage": r["stage"], "timestamp": r["stamp"], **json.loads(r["data"])} for r in self.db.execute("SELECT * FROM traces WHERE request=? ORDER BY seq", (request,))]
+        return [
+            {"stage": r["stage"], "timestamp": r["stamp"], **json.loads(r["data"])}
+            for r in self.db.execute("SELECT * FROM traces WHERE request=? ORDER BY seq", (request,))
+        ]
 
     def reserve(self, request, session, role, model, estimate, limit, task_id=None):
         b = self.settings.budgets
         day = datetime.now(timezone.utc).date().isoformat()
-        if estimate < 0 or not __import__('math').isfinite(estimate):
+        if estimate < 0 or not math.isfinite(estimate):
             raise BudgetExceeded("Unknown or invalid price")
         with self.transaction():
+
             def total(clause, values):
                 return self.db.execute("SELECT COALESCE(SUM(cost),0) FROM calls WHERE " + clause, values).fetchone()[0]
-            checks = [(total("request=?", (request,)), limit, "request"),
-                      (total("session=?", (session,)), b.session_budget, "session"),
-                      (total("day=?", (day,)), b.daily_hard_budget, "daily")]
+
+            checks = [
+                (total("request=?", (request,)), limit, "request"),
+                (total("session=?", (session,)), b.session_budget, "session"),
+                (total("day=?", (day,)), b.daily_hard_budget, "daily"),
+            ]
             bucket = "planner" if role == "planner" else "verification" if role in ("reviewer", "arbiter") else "worker"
-            roles = ("planner",) if bucket == "planner" else ("reviewer", "arbiter") if bucket == "verification" else ("executor", "repair", "gateway")
+            roles = (
+                ("planner",)
+                if bucket == "planner"
+                else ("reviewer", "arbiter")
+                if bucket == "verification"
+                else ("executor", "repair", "gateway")
+            )
             spent = total("request=? AND role IN (" + ",".join("?" for _ in roles) + ")", (request, *roles))
             checks.append((spent, getattr(b, bucket + "_budget"), bucket))
             for used, cap, name in checks:
                 if used + estimate > cap + 1e-10:
                     raise BudgetExceeded(f"{name} budget exceeded")
             if model.tier == 4:
-                count = self.db.execute("SELECT COUNT(*) FROM calls WHERE request=? AND frontier=1", (request,)).fetchone()[0]
-                plans = self.db.execute("SELECT COUNT(*) FROM calls WHERE request=? AND frontier=1 AND role='planner'", (request,)).fetchone()[0]
+                count = self.db.execute(
+                    "SELECT COUNT(*) FROM calls WHERE request=? AND frontier=1", (request,)
+                ).fetchone()[0]
+                plans = self.db.execute(
+                    "SELECT COUNT(*) FROM calls WHERE request=? AND frontier=1 AND role='planner'", (request,)
+                ).fetchone()[0]
                 if count >= b.max_frontier_calls or (role == "planner" and plans >= b.max_initial_frontier_plans):
                     raise BudgetExceeded("Frontier call limit reached")
             call = uuid4().hex
-            self.db.execute("INSERT INTO calls(id,request,session,day,role,model,frontier,cost,state,usage) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                            (call, request, session, day, role, model.id, int(model.tier == 4), estimate, "reserved", "{}"))
+            self.db.execute(
+                "INSERT INTO calls(id,request,session,day,role,model,frontier,cost,state,usage) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (call, request, session, day, role, model.id, int(model.tier == 4), estimate, "reserved", "{}"),
+            )
             self.active_calls.add(call)
             if task_id:
                 self.db.execute("INSERT INTO task_calls VALUES(?,?)", (call, task_id))
         self.economics("reserve", call, request, session, role, model, task_id, estimate)
+        self.log.emit(
+            "provider",
+            "reserved",
+            request_id=request,
+            session_id=session,
+            model=model.id,
+            provider=model.provider,
+            task_id=task_id,
+        )
         return call
 
     def task_cost(self, task_id):
-        return self.db.execute("SELECT COALESCE(SUM(c.cost),0) FROM calls c JOIN task_calls t ON c.id=t.call_id WHERE t.task_id=?", (task_id,)).fetchone()[0]
+        return self.db.execute(
+            "SELECT COALESCE(SUM(c.cost),0) FROM calls c JOIN task_calls t ON c.id=t.call_id WHERE t.task_id=?",
+            (task_id,),
+        ).fetchone()[0]
 
     def settle(self, call, cost, usage, latency, failed=False):
         # Uncertain/failed calls retain their reservation; a timeout may still be billable.
         with self.lock:
-            self.db.execute("UPDATE calls SET cost=COALESCE(?,cost), state=?, usage=?, latency=? WHERE id=?",
-                            (cost, "uncertain" if failed else "complete", json.dumps(usage), latency, call))
+            self.db.execute(
+                "UPDATE calls SET cost=COALESCE(?,cost), state=?, usage=?, latency=? WHERE id=?",
+                (cost, "uncertain" if failed else "complete", json.dumps(usage), latency, call),
+            )
             self.active_calls.discard(call)
             self.db.execute("UPDATE egress SET state=? WHERE call=?", ("uncertain" if failed else "sent", call))
         self.economics("settle", call, cost, usage, failed)
+        row = self.db.execute("SELECT request,session,model FROM calls WHERE id=?", (call,)).fetchone()
+        if row:
+            self.log.emit(
+                "provider",
+                "settled",
+                request_id=row["request"],
+                session_id=row["session"],
+                model=row["model"],
+                status="uncertain" if failed else "complete",
+                duration_ms=round(latency * 1000),
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+            )
 
     def costs(self, request=None):
-        rows = list(self.db.execute("SELECT * FROM calls" + (" WHERE request=?" if request else ""), (request,) if request else ()))
+        rows = list(
+            self.db.execute(
+                "SELECT * FROM calls" + (" WHERE request=?" if request else ""), (request,) if request else ()
+            )
+        )
         day = datetime.now(timezone.utc).date().isoformat()
         today = sum(r["cost"] for r in rows if r["day"] == day)
-        return {"estimated_usd": round(sum(r["cost"] for r in rows), 8), "today_usd": round(today, 8), "calls": len(rows),
-                "frontier_calls": sum(r["frontier"] for r in rows), "uncertain_calls": sum(r["state"] != "complete" for r in rows),
-                "soft_budget_exceeded": today >= self.settings.budgets.daily_soft_budget,
-                "by_model": {m: round(sum(r["cost"] for r in rows if r["model"] == m), 8) for m in {r["model"] for r in rows}}}
+        return {
+            "estimated_usd": round(sum(r["cost"] for r in rows), 8),
+            "today_usd": round(today, 8),
+            "calls": len(rows),
+            "frontier_calls": sum(r["frontier"] for r in rows),
+            "uncertain_calls": sum(r["state"] != "complete" for r in rows),
+            "soft_budget_exceeded": today >= self.settings.budgets.daily_soft_budget,
+            "by_model": {
+                m: round(sum(r["cost"] for r in rows if r["model"] == m), 8) for m in {r["model"] for r in rows}
+            },
+        }
 
     def success(self, model, family, passed, latency):
         with self.transaction():
             r = self.db.execute("SELECT * FROM profiles WHERE model=? AND family=?", (model, family)).fetchone()
-            n, old, old_latency = (r["n"], r["success"], r["latency"]) if r else (0, .5, latency)
-            self.db.execute("INSERT OR REPLACE INTO profiles VALUES(?,?,?,?,?)", (model, family, n+1, .1*int(passed)+.9*old, .1*latency+.9*old_latency))
+            n, old, old_latency = (r["n"], r["success"], r["latency"]) if r else (0, 0.5, latency)
+            self.db.execute(
+                "INSERT OR REPLACE INTO profiles VALUES(?,?,?,?,?)",
+                (model, family, n + 1, 0.1 * int(passed) + 0.9 * old, 0.1 * latency + 0.9 * old_latency),
+            )
 
     def outcome(self, model, family, **metrics):
         from .safety import redact
+
         with self.lock:
-            self.db.execute("INSERT INTO outcomes(model,family,stamp,data) VALUES(?,?,?,?)", (model, family, time.time(), json.dumps(redact(metrics))))
+            self.db.execute(
+                "INSERT INTO outcomes(model,family,stamp,data) VALUES(?,?,?,?)",
+                (model, family, time.time(), json.dumps(redact(metrics))),
+            )
 
     def reset_profiles(self):
         with self.transaction():
@@ -273,39 +377,60 @@ class Store:
             where.append("provider=?")
             args.append(provider)
         if search:
-            where.append("(instr(lower(id),lower(?))>0 OR instr(lower(json_extract(data,'$.deployment_name')),lower(?))>0)")
+            where.append(
+                "(instr(lower(id),lower(?))>0 OR instr(lower(json_extract(data,'$.deployment_name')),lower(?))>0)"
+            )
             args.extend([search, search])
         clause = " WHERE " + " AND ".join(where) if where else ""
         total = self.db.execute("SELECT COUNT(*) FROM model_registry" + clause, args).fetchone()[0]
-        rows = self.db.execute("SELECT data FROM model_registry" + clause + " ORDER BY id LIMIT ? OFFSET ?", (*args, limit, offset))
-        return {"items": [json.loads(row[0]) for row in rows], "total": total, "offset": offset, "limit": limit,
-                "next_offset": offset + limit if offset + limit < total else None}
+        rows = self.db.execute(
+            "SELECT data FROM model_registry" + clause + " ORDER BY id LIMIT ? OFFSET ?", (*args, limit, offset)
+        )
+        return {
+            "items": [json.loads(row[0]) for row in rows],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "next_offset": offset + limit if offset + limit < total else None,
+        }
 
     def save_model(self, model):
         with self.lock:
-            self.db.execute("INSERT OR REPLACE INTO model_registry VALUES(?,?,?,?)", (model.id, model.provider, model.model_dump_json(), time.time()))
+            self.db.execute(
+                "INSERT OR REPLACE INTO model_registry VALUES(?,?,?,?)",
+                (model.id, model.provider, model.model_dump_json(), time.time()),
+            )
 
     def registry(self):
         from .schema import Model
-        return [Model.model_validate_json(row[0]) for row in self.db.execute("SELECT data FROM model_registry ORDER BY id")]
+
+        return [
+            Model.model_validate_json(row[0]) for row in self.db.execute("SELECT data FROM model_registry ORDER BY id")
+        ]
 
     def provider_health(self, provider, status=None, cooldown=0, error_code=None):
         with self.lock:
             if status is not None:
-                self.db.execute("INSERT OR REPLACE INTO provider_health VALUES(?,?,?,?,?)", (provider, status, time.time()+cooldown, error_code, time.time()))
+                self.db.execute(
+                    "INSERT OR REPLACE INTO provider_health VALUES(?,?,?,?,?)",
+                    (provider, status, time.time() + cooldown, error_code, time.time()),
+                )
             row = self.db.execute("SELECT * FROM provider_health WHERE provider=?", (provider,)).fetchone()
             result = dict(row) if row else {"provider": provider, "status": "UNKNOWN", "until": 0}
-            if result["status"] in {"RATE_LIMITED", "DEGRADED", "UNAVAILABLE"} and result.get("until", 0) <= time.time():
+            if (
+                result["status"] in {"RATE_LIMITED", "DEGRADED", "UNAVAILABLE"}
+                and result.get("until", 0) <= time.time()
+            ):
                 result["status"] = "UNKNOWN"
             return result
 
     def quality(self, model, family, prior=None):
-        prior = model.quality_priors.get(family, model.quality_priors.get("default", .8)) if prior is None else prior
+        prior = model.quality_priors.get(family, model.quality_priors.get("default", 0.8)) if prior is None else prior
         row = self.db.execute("SELECT * FROM profiles WHERE model=? AND family=?", (model.id, family)).fetchone()
         if not row:
             return prior
-        weight = min(.5, row["n"] / 100)
-        return prior * (1-weight) + row["success"] * weight
+        weight = min(0.5, row["n"] / 100)
+        return prior * (1 - weight) + row["success"] * weight
 
     def healthy(self, model):
         row = self.db.execute("SELECT until FROM health WHERE model=?", (model,)).fetchone()
@@ -315,5 +440,9 @@ class Store:
         with self.transaction():
             row = self.db.execute("SELECT failures FROM health WHERE model=?", (model,)).fetchone()
             failures = 0 if ok else (row[0] if row else 0) + 1
-            until = time.time()+self.settings.routing.circuit_cooldown if failures >= self.settings.routing.circuit_failures else 0
+            until = (
+                time.time() + self.settings.routing.circuit_cooldown
+                if failures >= self.settings.routing.circuit_failures
+                else 0
+            )
             self.db.execute("INSERT OR REPLACE INTO health VALUES(?,?,?)", (model, failures, until))

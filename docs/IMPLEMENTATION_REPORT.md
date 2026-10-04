@@ -1,12 +1,14 @@
 # Execution compiler and Savings Pulse implementation report
 
-Verified locally on Windows on 2026-10-04 in the existing checkout, alongside the preserved V2 changes. Personal client settings were not modified. All model execution used deterministic fixtures; there were zero paid inference calls.
+This records the earlier compiler milestone. See [V1 hardening verification](V1_HARDENING_REPORT.md) for the release-candidate checks.
+
+Verified locally on Windows on 2026-10-04 in the existing checkout, alongside the preserved existing features. Personal client settings were not modified. All model execution used deterministic fixtures; there were zero paid inference calls.
 
 ## Requested status
 
 | Area | Result |
 |---|---|
-| Files changed | Core changes span CLI/parser/setup/output/service, contracts/schema/engine/context/providers/gateway, AXIR, DNA, receipts/recovery, SavingsEngine/store/SSE, routing/discovery, Lab, MCP/task API, UI assets, tests and documentation. The checkout also contains prior V2 work. Detailed file inventory follows below. |
+| Files changed | Core changes span CLI/parser/setup/output/service, contracts/schema/engine/context/providers/gateway, AXIR, DNA, receipts/recovery, SavingsEngine/store/SSE, routing/discovery, Lab, MCP/task API, UI assets, tests and documentation. The checkout also contains earlier development work. Detailed file inventory follows below. |
 | CLI entrypoints | `accs` is the primary command. Human output is default; JSON, plain output, debug diagnostics, terminal setup, completion, stable error categories and structured progress are available. |
 | Compatibility aliases | `accension`, `router`, Python package `local_ai_router`, and MCP name `local-ai-router` remain. Virtual model selectors include auto, local, cheap, balanced and quality. |
 | Default ports | Hub, UI, gateway, native task API and HTTP MCP: `127.0.0.1:8765`. Optional enrollment: `127.0.0.1:8766`. Stdio MCP has no listening port. |
@@ -92,7 +94,7 @@ Plugins, configured credential commands, validation commands and MCP processes a
 
 ## File inventory
 
-The following inventory includes preserved V2 changes already present in the checkout as well as this upgrade. It is not a claim that every file originated in this request.
+The following inventory includes preserved existing features already present in the checkout as well as this upgrade. It is not a claim that every file originated in this request.
 
 ```text
 .github/workflows/tests.yml
@@ -103,7 +105,7 @@ CODEX_SETUP.md
 CONFIGURATION.md
 CONTRIBUTING.md
 MCP.md
-MIGRATION_V1_V2.md
+docs/UPGRADE_NOTES.md
 PLUGIN_SDK.md
 PRIVACY.md
 PROVIDERS.md
@@ -205,8 +207,8 @@ tests/test_accs_surfaces.py
 tests/test_provider_conformance.py
 tests/test_savings.py
 tests/test_savings_scale.py
-tests/test_v2_calibration.py
-tests/test_v2_control.py
-tests/test_v2_management.py
-tests/test_v2_recovery.py
+tests/test_calibration.py
+tests/test_control_plane.py
+tests/test_management.py
+tests/test_recovery.py
 ```

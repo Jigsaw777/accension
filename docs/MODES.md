@@ -1,5 +1,7 @@
 # Companion and Sovereign
 
+Companion mode lets your assistant choose when to delegate a task to Accension. Sovereign mode lets Accension plan and execute tasks directly, or route supported calls from a connected client.
+
 | Surface | Control |
 |---|---|
 | Companion MCP | Host chooses when to delegate; Accension runs the delegated repository task. |

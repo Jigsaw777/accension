@@ -1,6 +1,6 @@
 # MCP, task API and gateway
 
-accs mcp starts the stdio server. The compatibility server name stays local-ai-router. A running hub also exposes authenticated Streamable HTTP at /mcp. Both use the same engine, contracts, usage and receipts.
+MCP (Model Context Protocol) lets a connected assistant call Accension tools. `accs mcp` starts the local server. The compatibility name stays `local-ai-router`. A running hub also exposes authenticated HTTP at `/mcp`. Both use the same execution engine and local records.
 
 ## Companion tools
 
@@ -12,7 +12,7 @@ accs mcp starts the stdio server. The compatibility server name stays local-ai-r
 | plan_task / execute_plan | Separate reviewable planning and execution |
 | receipt | Stored models, hashes, validation, egress and economics |
 | router_status | Hub or run readiness |
-| router_info | Paged models, providers, roles, recovery, costs, savings, cache, trace and budget |
+| router_info | Paged models, providers, roles, recovery, costs, savings, cache, trace, budget, skills and presets |
 
 Example orchestrate_feature arguments:
 
@@ -29,6 +29,8 @@ Example orchestrate_feature arguments:
 ```
 
 Inspect the stored plan before execute_plan, or use safe-auto for planning and execution within registered boundaries. The host decides when to delegate and retains its conversation model. MCP grants file-changing capabilities, not a sandbox or authorization beyond the user's request.
+
+Skill operations use the grouped `router_info` actions `skills`, `skill-search`, `skill-suggest`, `skill-recipes`, `presets`, `preset` and `select-preset`. Selection accepts `preset`, `repo_path` and `session` as appropriate. `orchestrate_feature`, `orchestrate_bugfix` and `plan_task` accept `preset`, `skills` and `skill_mode` (`manual`, `auto` or `off`). Skill suggestions are local and make no paid calls. See [Skills](docs/SKILLS.md) for trust, budget and preset precedence.
 
 ## Native task API
 

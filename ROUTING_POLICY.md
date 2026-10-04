@@ -1,6 +1,6 @@
 # Routing policy
 
-LocalDecisionEngine classifies without inference, using the requested operation, request size, repository files/imports/tests, risk signals and historical failures. It produces complexity, risk, confidence, required capabilities and planning depth: NONE, MICRO_PLAN, IMPLEMENTATION_PLAN or FULL_ARCHITECTURE_PLAN.
+Routing means choosing an eligible model for a task. Accension first estimates the task type, complexity and risk using local rules and repository metadata. It then checks model capabilities, quality evidence, privacy and price. This preview makes no AI calls. More complex tasks may need a saved plan before execution.
 
 `router route "TASK" --repo PATH` and Playground simulate routing without model calls or edits. Results show role choices, rejection reasons, fallback edges and estimated costs. These are observable decisions, not private model reasoning.
 

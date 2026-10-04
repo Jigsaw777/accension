@@ -1,4 +1,5 @@
 """Privacy gates shared by routing, transports, discovery and repository context."""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -7,7 +8,7 @@ from fnmatch import fnmatchcase
 from urllib.parse import urlparse
 
 from .errors import PrivacyViolation
-from .safety import SECRET, redact
+from .safety import redact
 
 _repository_policy = ContextVar("accension_repository_privacy", default=None)
 
@@ -28,7 +29,12 @@ def fully_local(settings):
 def is_local(provider):
     if not provider.local:
         return False
-    if provider.kind in {"bedrock", "vertex", "gemini"} or provider.auth in {"azure_identity", "aws_chain", "google_adc", "command"} or provider.azure_identity or provider.token_command:
+    if (
+        provider.kind in {"bedrock", "vertex", "gemini"}
+        or provider.auth in {"azure_identity", "aws_chain", "google_adc", "command"}
+        or provider.azure_identity
+        or provider.token_command
+    ):
         return False
     if provider.endpoint:
         return urlparse(provider.endpoint).hostname in {"localhost", "127.0.0.1", "::1"}
@@ -38,9 +44,15 @@ def is_local(provider):
 
 def allowed_provider(settings, provider, role="executor", allow_cloud=True):
     from .contracts import current_contract
+
     local = is_local(provider)
     repo = _repository_policy.get()
-    if not local and (fully_local(settings) or not allow_cloud or current_contract().get("mode") == "LOCAL_ONLY" or (repo is not None and not repo.cloud_allowed)):
+    if not local and (
+        fully_local(settings)
+        or not allow_cloud
+        or current_contract().get("mode") == "LOCAL_ONLY"
+        or (repo is not None and not repo.cloud_allowed)
+    ):
         return False
     if not local and role in {"classifier", "arbiter"} and settings.control_plane.routing_location == "local-only":
         return False
@@ -71,6 +83,7 @@ def preflight(messages, provider):
     if sanitized != messages:
         repo = _repository_policy.get()
         from .contracts import current_contract, strictest
+
         if strictest(repo.privacy_mode if repo else None, current_contract().get("mode")) == "CLOUD_REDACTED":
             return sanitized
         raise PrivacyViolation("Secret-sensitive content cannot be sent to a cloud provider")

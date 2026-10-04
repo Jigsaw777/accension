@@ -1,4 +1,5 @@
 """Versioned provider extension API. Plugins are explicitly trusted Python code."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,8 +7,9 @@ from importlib.metadata import entry_points
 from typing import Literal, Protocol
 
 from pydantic import Field
-from .schema import ModelDescriptor, Provider, Strict
+
 from .errors import CapabilityUnsupported, ProviderUnavailable
+from .schema import ModelDescriptor, Provider, Strict
 
 PROVIDER_PLUGIN_API_VERSION = "1"
 
@@ -72,14 +74,30 @@ class ProviderContext:
 
     def descriptor(self, remote_id, **kwargs):
         import time
+
         from .privacy import is_local
+
         local = is_local(self.provider)
-        defaults = {"id": self.name + ":" + remote_id, "provider": self.name, "deployment_name": remote_id,
-                    "locality": "local" if local else "cloud", "discovered_from": self.provider.kind,
-                    "discovered_at": time.time(), "capabilities_source": "conservative_unknown", "supports_code": False,
-                    "supports_chat_completions": False, "protocols": [self.manager.protocol(self.provider)]}
+        defaults = {
+            "id": self.name + ":" + remote_id,
+            "provider": self.name,
+            "deployment_name": remote_id,
+            "locality": "local" if local else "cloud",
+            "discovered_from": self.provider.kind,
+            "discovered_at": time.time(),
+            "capabilities_source": "conservative_unknown",
+            "supports_code": False,
+            "supports_chat_completions": False,
+            "protocols": [self.manager.protocol(self.provider)],
+        }
         if local:
-            defaults.update(input_price=0, output_price=0, pricing_status="known", pricing_source="local_api_no_token_charge", local_runtime=self.provider.kind)
+            defaults.update(
+                input_price=0,
+                output_price=0,
+                pricing_status="known",
+                pricing_source="local_api_no_token_charge",
+                local_runtime=self.provider.kind,
+            )
         defaults.update(kwargs)
         for name, value in defaults.pop("capabilities", {}).items():
             defaults["supports_" + name] = value
@@ -96,22 +114,35 @@ class ProviderPlugin:
         return [field.model_dump() for field in self.manifest().fields]
 
     async def discover_models(self, context: ProviderContext) -> InventoryResult:
-        return InventoryResult(models=[context.descriptor(model, status="available", discovered_from="explicit_configuration") for model in context.provider.model_ids], complete=False,
-                               source="explicit_configuration", warnings=["Inventory unavailable; configured model IDs preserved"])
+        return InventoryResult(
+            models=[
+                context.descriptor(model, status="available", discovered_from="explicit_configuration")
+                for model in context.provider.model_ids
+            ],
+            complete=False,
+            source="explicit_configuration",
+            warnings=["Inventory unavailable; configured model IDs preserved"],
+        )
 
     async def pricing(self, context):
         return {}
 
     async def health(self, context):
         inventory = await self.discover_models(context)
-        return {"status": "ok", "models": [m.deployment_name for m in inventory.models], "inventory_complete": inventory.complete}
+        return {
+            "status": "ok",
+            "models": [m.deployment_name for m in inventory.models],
+            "inventory_complete": inventory.complete,
+        }
 
     async def probe_model(self, context, model, capability, budget=0, approved=False):
         from .calibration import probe_model
+
         return await probe_model(context.manager, model, capability, budget, approved)
 
     def create_transport(self, protocol: str) -> TransportAdapter:
         from .transports import TRANSPORTS
+
         if protocol not in self.manifest().protocols or protocol not in TRANSPORTS:
             raise CapabilityUnsupported("Provider does not support configured transport")
         return TRANSPORTS[protocol]()
@@ -120,6 +151,7 @@ class ProviderPlugin:
 class PluginRegistry:
     def __init__(self, enabled=()):
         from .builtin_providers import builtins
+
         self.plugins = builtins()
         self.errors = {}
         installed = entry_points(group="accension.providers")

@@ -1,6 +1,6 @@
 # Savings Pulse methodology
 
-Savings Pulse is local counterfactual accounting shared by CLI, UI, MCP and receipts, not provider invoice reconciliation. Baseline, savings, percentages and cloud tokens avoided are estimates. Actual API cost uses reported usage and frozen configured prices.
+Savings Pulse compares recorded API usage with an estimated alternative model cost. It appears in the CLI, app, MCP tools and receipts. Savings and avoided cloud tokens are estimates, not provider invoices. Recorded API cost uses reported usage and the prices saved when the task ran.
 
 ## Baseline
 

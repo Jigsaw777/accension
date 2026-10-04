@@ -1,5 +1,7 @@
 # Provider plugin SDK, API version 1
 
+A provider plugin adds support for another AI service. This developer guide explains how to build and test one. Skills are instruction files; provider plugins are executable Python code.
+
 Packages register entry points in `accension.providers`. Entry point name, manifest ID and enabled plugin name must match. Incompatible/broken plugins are reported without preventing management startup.
 
 Plugins execute as the current OS user. **Only install and enable trusted code; plugins are not sandboxed.** Manifest fields do not constrain malicious Python.

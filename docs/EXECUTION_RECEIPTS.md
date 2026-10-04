@@ -1,5 +1,7 @@
 # Execution Receipts
 
+An execution receipt is a saved record of a task: which models ran, what changed, which checks passed and what the calls cost. Use it to review a result or investigate a failure.
+
 ```sh
 accs receipt RUN_ID
 accs receipt RUN_ID --json --output receipt.json

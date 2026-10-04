@@ -1,15 +1,23 @@
 from __future__ import annotations
-import os, re, secrets, hashlib, json
+
+import hashlib
+import json
+import os
+import re
+import secrets
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
+
 import yaml
 from pydantic import ConfigDict, Field, model_validator
-from .schema import Strict, Model, Provider, EgressBudget
+
 from .migration import LegacyRoutingAccessors, migrate_routing
+from .schema import EgressBudget, Model, Provider, Strict
+
 
 class Routing(LegacyRoutingAccessors, Strict):
-    classifier_confidence_threshold: float = Field(default=.80, ge=0, le=1)
+    classifier_confidence_threshold: float = Field(default=0.80, ge=0, le=1)
     arbiter_risk_threshold: int = Field(default=70, ge=0, le=100)
     frontier_planner_complexity_threshold: int = Field(default=65, ge=0, le=100)
     max_parallel_workers: int = Field(default=2, ge=1, le=16)
@@ -22,21 +30,35 @@ class Routing(LegacyRoutingAccessors, Strict):
     arbiter_model: str | None = None
     require_arbiter_for_critical: bool = False
     planner_model_candidates: list[str] = []
-    quality_slos: dict[str, float] = {"simple": .85, "coding": .90, "architecture": .94, "critical": .98, "explanation": .85}
-    cost_weight: float = .15
-    latency_weight: float = .03
-    failure_risk_weight: float = .2
-    cache_hit_bonus: float = .01
-    local_execution_bonus: float = .02
-    historical_success_bonus: float = .03
+    quality_slos: dict[str, float] = {
+        "simple": 0.85,
+        "coding": 0.90,
+        "architecture": 0.94,
+        "critical": 0.98,
+        "explanation": 0.85,
+    }
+    cost_weight: float = 0.15
+    latency_weight: float = 0.03
+    failure_risk_weight: float = 0.2
+    cache_hit_bonus: float = 0.01
+    local_execution_bonus: float = 0.02
+    historical_success_bonus: float = 0.03
     reviewer_risk_threshold: int = 50
     allow_below_slo: bool = False
     max_attempts: int = 3
     circuit_failures: int = 3
     circuit_cooldown: float = 60
     timeouts: dict[str, float] = {"arbiter": 30, "local": 180, "cloud": 90, "planner": 120, "tests": 120, "mcp": 600}
-    token_ceilings: dict[str, int] = {"simple": 4000, "coding": 12000, "architecture": 20000, "critical": 24000, "explanation": 6000}
-    preset: Literal["balanced", "maximum-savings", "quality-first", "fully-local", "local-control", "custom"] = "balanced"
+    token_ceilings: dict[str, int] = {
+        "simple": 4000,
+        "coding": 12000,
+        "architecture": 20000,
+        "critical": 24000,
+        "explanation": 6000,
+    }
+    preset: Literal["balanced", "maximum-savings", "quality-first", "fully-local", "local-control", "custom"] = (
+        "balanced"
+    )
     allow_unknown_pricing: bool = False
     unknown_input_price: float = Field(default=20, gt=0)
     unknown_output_price: float = Field(default=100, gt=0)
@@ -44,7 +66,7 @@ class Routing(LegacyRoutingAccessors, Strict):
     allow_stale_pricing: bool = False
     resource_aware: bool = True
     available_ram_mb: float | None = Field(default=None, ge=0)
-    max_cost_confirmation: float = Field(default=.5, ge=0)
+    max_cost_confirmation: float = Field(default=0.5, ge=0)
 
     @model_validator(mode="before")
     @classmethod
@@ -55,7 +77,9 @@ class Routing(LegacyRoutingAccessors, Strict):
     def bounds(self):
         if any(not 0 <= value <= 1 for value in self.quality_slos.values()):
             raise ValueError("Quality SLOs must be probabilities")
-        if any(value <= 0 for value in self.timeouts.values()) or any(value < 256 for value in self.token_ceilings.values()):
+        if any(value <= 0 for value in self.timeouts.values()) or any(
+            value < 256 for value in self.token_ceilings.values()
+        ):
             raise ValueError("Timeouts and token ceilings must be positive")
         return self
 
@@ -75,7 +99,20 @@ class RolePolicy(Strict):
     allowed_provider_groups: list[str] = []
 
 
-ROLE_NAMES = ("classifier", "arbiter", "planner", "executor", "fast_executor", "complex_executor", "reviewer", "repairer", "compactor", "summarizer", "embedding", "vision")
+ROLE_NAMES = (
+    "classifier",
+    "arbiter",
+    "planner",
+    "executor",
+    "fast_executor",
+    "complex_executor",
+    "reviewer",
+    "repairer",
+    "compactor",
+    "summarizer",
+    "embedding",
+    "vision",
+)
 
 
 class Privacy(EgressBudget):
@@ -84,7 +121,9 @@ class Privacy(EgressBudget):
 
     @model_validator(mode="after")
     def relative_patterns(self):
-        if any(p.startswith(("/", "\\")) or ".." in p.replace("\\", "/").split("/") or ":" in p for p in self.never_send):
+        if any(
+            p.startswith(("/", "\\")) or ".." in p.replace("\\", "/").split("/") or ":" in p for p in self.never_send
+        ):
             raise ValueError("Sensitive path patterns must be repository-relative")
         return self
 
@@ -94,7 +133,7 @@ class Plugins(Strict):
 
 
 class Calibration(Strict):
-    budget: float = Field(default=.05, ge=0, le=10)
+    budget: float = Field(default=0.05, ge=0, le=10)
     max_models: int = Field(default=3, ge=1, le=10)
     max_cases: int = Field(default=11, ge=1, le=20)
 
@@ -106,25 +145,30 @@ class Runtime(Strict):
     calibration_concurrency: int = Field(default=2, ge=1, le=64)
     discovery_timeout: float = Field(default=120, gt=0, le=3600)
 
+
 class Savings(Strict):
     enabled: bool = True
-    baseline_method: Literal["DIRECT_MODEL", "HOST_MODEL", "USER_SELECTED_MODEL", "QUALITY_BASELINE", "DISABLED"] = "DIRECT_MODEL"
+    baseline_method: Literal["DIRECT_MODEL", "HOST_MODEL", "USER_SELECTED_MODEL", "QUALITY_BASELINE", "DISABLED"] = (
+        "DIRECT_MODEL"
+    )
     baseline_model: str | None = None
     header_period: Literal["current", "session", "today", "7d", "30d", "all"] = "today"
     show_tokens: bool = True
     show_percentage: bool = True
     currency: Literal["USD"] = "USD"
 
+
 class Budgets(Strict):
-    default_request_budget: float = Field(default=.5, ge=0)
+    default_request_budget: float = Field(default=0.5, ge=0)
     session_budget: float = Field(default=3, ge=0)
     daily_soft_budget: float = Field(default=3, ge=0)
     daily_hard_budget: float = Field(default=5, ge=0)
-    planner_budget: float = Field(default=.2, ge=0)
-    worker_budget: float = Field(default=.25, ge=0)
-    verification_budget: float = Field(default=.05, ge=0)
+    planner_budget: float = Field(default=0.2, ge=0)
+    worker_budget: float = Field(default=0.25, ge=0)
+    verification_budget: float = Field(default=0.05, ge=0)
     max_frontier_calls: int = Field(default=2, ge=0)
     max_initial_frontier_plans: int = Field(default=1, ge=0)
+
 
 class CacheConfig(Strict):
     enabled: bool = True
@@ -138,6 +182,7 @@ class CacheConfig(Strict):
         if self.semantic_cache_enabled:
             raise ValueError("Semantic cache is not implemented; use exact caching")
         return self
+
 
 class Repository(Strict):
     path: str
@@ -155,6 +200,7 @@ class Repository(Strict):
     def privacy_mode(self):
         return self.privacy.mode if self.privacy is not None else "CLOUD_ALLOWED" if self.allow_cloud else "LOCAL_ONLY"
 
+
 class Discovery(Strict):
     enabled: bool = True
     interval_seconds: int = Field(default=300, ge=30)
@@ -169,8 +215,14 @@ class Discovery(Strict):
     model_defaults: dict = {"tier": 2, "quality_priors": {"default": 0.85}}
     overrides: dict[str, dict] = {}
     local_scan: bool = True
-    local_endpoints: dict[str, str] = {"ollama": "http://127.0.0.1:11434", "lmstudio": "http://127.0.0.1:1234/v1", "local-openai": "http://127.0.0.1:8080/v1", "vllm": "http://127.0.0.1:8000/v1"}
-    probe_timeout: float = Field(default=.5, gt=0, le=10)
+    local_endpoints: dict[str, str] = {
+        "ollama": "http://127.0.0.1:11434",
+        "lmstudio": "http://127.0.0.1:1234/v1",
+        "local-openai": "http://127.0.0.1:8080/v1",
+        "vllm": "http://127.0.0.1:8000/v1",
+    }
+    probe_timeout: float = Field(default=0.5, gt=0, le=10)
+
 
 class Settings(Strict):
     # Runtime discovery updates providers and models together; management writes
@@ -187,11 +239,21 @@ class Settings(Strict):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     repositories: list[Repository] = []
     skills: dict[str, str] = {}
+    skill_directories: list[str] = []
+    active_skill_token_budget: int = Field(default=4000, ge=1, le=100000)
+    log_level: Literal["ERROR", "WARNING", "INFO", "DEBUG"] = "INFO"
+    log_max_bytes: int = Field(default=10_000_000, ge=1024)
+    log_backups: int = Field(default=5, ge=1, le=20)
     tool_registry: dict[str, dict] = {}
     discovery: Discovery = Field(default_factory=Discovery)
     mock: bool = False
     control_plane: ControlPlane = Field(default_factory=ControlPlane)
-    roles: dict[str, RolePolicy] = Field(default_factory=lambda: {name: RolePolicy(locality="local-only" if name in ("classifier", "arbiter") else "local-preferred") for name in ROLE_NAMES})
+    roles: dict[str, RolePolicy] = Field(
+        default_factory=lambda: {
+            name: RolePolicy(locality="local-only" if name in ("classifier", "arbiter") else "local-preferred")
+            for name in ROLE_NAMES
+        }
+    )
     plugins: Plugins = Field(default_factory=Plugins)
     calibration: Calibration = Field(default_factory=Calibration)
     runtime: Runtime = Field(default_factory=Runtime)
@@ -228,6 +290,7 @@ class Settings(Strict):
     @property
     def state(self) -> Path:
         from .safety import safe_path
+
         p = safe_path(self.home, ".router", internal=True)
         p.mkdir(parents=True, exist_ok=True)
         return p
@@ -257,10 +320,8 @@ class Settings(Strict):
                 return repo
         raise ValueError("Repository is not registered. Use router repo add PATH first.")
 
+
 def default_home() -> Path:
-    checkout = Path(__file__).resolve().parents[2]
-    if (checkout / "config").is_dir() and (checkout / "pyproject.toml").is_file():
-        return checkout
     return Path(os.getenv("APPDATA", str(Path.home() / ".config"))) / "accension"
 
 
@@ -282,17 +343,47 @@ def validate_endpoint(provider: Provider, port: int):
 def load(home: str | Path | None = None, mock: bool = False) -> Settings:
     root = Path(home or os.getenv("ROUTER_HOME") or default_home()).resolve()
     data: dict = {"home": root, "mock": mock}
-    for name in ("version", "providers", "models", "routing", "budgets", "cache", "skills", "repositories", "discovery", "roles", "control_plane", "runtime", "privacy", "savings", "local"):
+    for name in (
+        "version",
+        "providers",
+        "models",
+        "routing",
+        "budgets",
+        "cache",
+        "skills",
+        "repositories",
+        "discovery",
+        "roles",
+        "control_plane",
+        "runtime",
+        "privacy",
+        "savings",
+        "local",
+    ):
         path = root / "config" / f"{name}.yaml"
         if path.exists():
             raw = path.read_text(encoding="utf-8")
             # Substitute before YAML parsing with JSON quoting; never inject YAML syntax.
-            raw = re.sub(r'\$\{([A-Z_][A-Z0-9_]*)\}', lambda m: json.dumps(os.getenv(m[1], "")), raw)
+            raw = re.sub(r"\$\{([A-Z_][A-Z0-9_]*)\}", lambda m: json.dumps(os.getenv(m[1], "")), raw)
             data.update(yaml.safe_load(raw) or {})
     settings = Settings.model_validate(data)
     if mock:
         settings.providers = {"mock": Provider(kind="mock", local=True)}
-        settings.models = [Model(id="mock-worker", provider="mock", deployment_name="mock-worker", input_price=0, output_price=0, supports_tools=True, supports_structured_output=True, supports_streaming=True, supports_responses_api=True, quality_priors={"default": .99}, concurrency_limit=4)]
+        settings.models = [
+            Model(
+                id="mock-worker",
+                provider="mock",
+                deployment_name="mock-worker",
+                input_price=0,
+                output_price=0,
+                supports_tools=True,
+                supports_structured_output=True,
+                supports_streaming=True,
+                supports_responses_api=True,
+                quality_priors={"default": 0.99},
+                concurrency_limit=4,
+            )
+        ]
         settings.routing.classifier_enabled = False
         settings.routing.require_arbiter_for_critical = False
     return settings

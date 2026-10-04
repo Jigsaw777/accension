@@ -1,4 +1,5 @@
 """Coalesced local SSE fanout, with one low-frequency cross-process revision check."""
+
 import asyncio
 import json
 
@@ -26,7 +27,7 @@ class SavingsStream:
                     pass
                 self.event.clear()
                 # One queue item per subscriber; intermediate updates are replaced.
-                await asyncio.sleep(.25)
+                await asyncio.sleep(0.25)
                 self.engine.store.economics("recover_abandoned")
                 revision = self.engine.store.economics("revision")
                 if revision != self.last_revision and self.queues:
@@ -44,7 +45,13 @@ class SavingsStream:
 
     @staticmethod
     def packet(state):
-        return "event: savings.updated\nid: " + str(state["revision"]) + "\ndata: " + json.dumps(state, separators=(",", ":")) + "\n\n"
+        return (
+            "event: savings.updated\nid: "
+            + str(state["revision"])
+            + "\ndata: "
+            + json.dumps(state, separators=(",", ":"))
+            + "\n\n"
+        )
 
     async def events(self, request):
         queue = asyncio.Queue(maxsize=1)

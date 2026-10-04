@@ -1,9 +1,12 @@
 """OS-protected credentials and references; no plaintext fallback."""
-import ctypes, os
-from pathlib import Path
+
+import ctypes
+import os
+
 
 class Blob(ctypes.Structure):
     _fields_ = [("size", ctypes.c_ulong), ("data", ctypes.POINTER(ctypes.c_byte))]
+
 
 def _crypt(data: bytes, decrypt=False):
     if os.name != "nt":
@@ -21,18 +24,22 @@ def _crypt(data: bytes, decrypt=False):
     finally:
         ctypes.windll.kernel32.LocalFree(target.data)
 
+
 def secret_path(settings, name):
     import re
+
     if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,100}", name):
         raise ValueError("Invalid credential name")
     folder = settings.state / "credentials"
     folder.mkdir(exist_ok=True)
     return folder / (name + ".dpapi")
 
+
 def save_secret(settings, name, value):
     if not 8 <= len(value) <= 8192:
         raise ValueError("Invalid credential length")
     secret_path(settings, name).write_bytes(_crypt(value.encode()))
+
 
 def read_secret(settings, name):
     if not name:
@@ -50,14 +57,21 @@ class CredentialStore:
     @staticmethod
     def validate_reference(reference):
         import re
+
         if not re.fullmatch(r"(?:provider/)?[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+){0,3}", reference):
             raise ValueError("Invalid credential reference")
 
     def _path(self, reference):
         import hashlib
+
         self.validate_reference(reference)
         from .safety import safe_path
-        path = safe_path(self.settings.home, ".router/credentials/" + hashlib.sha256(reference.encode()).hexdigest() + ".dpapi", internal=True)
+
+        path = safe_path(
+            self.settings.home,
+            ".router/credentials/" + hashlib.sha256(reference.encode()).hexdigest() + ".dpapi",
+            internal=True,
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -65,12 +79,15 @@ class CredentialStore:
     def _keyring():
         try:
             import keyring
+
             backend = keyring.get_keyring()
             if backend.priority < 1 or "keyrings.alt" in type(backend).__module__:
                 raise RuntimeError("No supported secure OS keyring")
             return keyring
         except ImportError:
-            raise RuntimeError("Install accension[vault] for Keychain/Secret Service, or use an environment reference") from None
+            raise RuntimeError(
+                "Install accension[vault] for Keychain/Secret Service, or use an environment reference"
+            ) from None
 
     def save(self, reference, value):
         self.validate_reference(reference)
@@ -88,13 +105,16 @@ class CredentialStore:
             try:
                 self._keyring().set_password("accension", reference, value)
             except Exception:
-                raise RuntimeError("Secure OS vault unavailable; unlock Keychain/Secret Service or use an environment reference") from None
+                raise RuntimeError(
+                    "Secure OS vault unavailable; unlock Keychain/Secret Service or use an environment reference"
+                ) from None
 
     def read(self, reference):
         if not reference:
             return ""
         if reference.startswith("env:"):
             import re
+
             name = reference[4:]
             if not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name):
                 raise ValueError("Invalid environment credential reference")

@@ -1,0 +1,218 @@
+[
+  {
+    "id": "6c8ff95303902c15e9ae62db636bd3eea3d1c58502a22438c9ae7f88f55b5638",
+    "file": "src/local_ai_router/auth.py",
+    "categories": [
+      "asyncio.create_subprocess_exec"
+    ],
+    "count": 1,
+    "reason": "Operator-configured credential command runs as argv without a shell, with a 15-second timeout. Output is never logged. Treat configuration as trusted code."
+  },
+  {
+    "id": "5050b48e054fae3872f4ac212bf7465e3d20793b23a645ab1097148efd2e6920",
+    "file": "src/local_ai_router/cli.py",
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Server settings validate loopback hosts; enrollment is fixed to 127.0.0.1. Access logging is disabled to avoid leaking local authentication URLs."
+  },
+  {
+    "id": "5fee56db78b4c617ec13314151d7891ad65e58eed4b49edf2ca20a56059eda2f",
+    "file": "src/local_ai_router/cli.py",
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Server settings validate loopback hosts; enrollment is fixed to 127.0.0.1. Access logging is disabled to avoid leaking local authentication URLs."
+  },
+  {
+    "id": "80f32b28818e4d59c9a0225a6722754ec8e5bfd7985588e7066051e3f3c8bb52",
+    "file": "src/local_ai_router/context.py",
+    "categories": [
+      "registry.load"
+    ],
+    "count": 1,
+    "reason": "Read-only git inventory uses a fixed argv and timeout. Registry.load reads bounded trusted text and checks hashes; it is not object deserialization."
+  },
+  {
+    "id": "15acf2abdf2c7289b2be492ef54bd941e93fab566d56e95f81f8fc46f87971fd",
+    "file": "src/local_ai_router/context.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Read-only git inventory uses a fixed argv and timeout. Registry.load reads bounded trusted text and checks hashes; it is not object deserialization."
+  },
+  {
+    "id": "24cadeb767bdbc966ea009d7783d57f74cbcb09b17121934dd3fbe4a7cefa2bc",
+    "file": "src/local_ai_router/engine.py",
+    "categories": [
+      "self.skills.load"
+    ],
+    "count": 1,
+    "reason": "SkillRegistry.load reads bounded text, enforces explicit trust and hashes, and checks frozen ordering. It does not execute a skill."
+  },
+  {
+    "id": "2740a8eaa663aa98456e13f4165d7258f264b1006de7ba42f7658cf6fa6e0823",
+    "file": "src/local_ai_router/engine.py",
+    "categories": [
+      "self.skills.load"
+    ],
+    "count": 1,
+    "reason": "SkillRegistry.load reads bounded text, enforces explicit trust and hashes, and checks frozen ordering. It does not execute a skill."
+  },
+  {
+    "id": "899ba46e28e0fb4434e9332b139f8a547a0194a778bacbe62c8b1612d13ea34d",
+    "file": "src/local_ai_router/engine.py",
+    "categories": [
+      "self.skills.load"
+    ],
+    "count": 1,
+    "reason": "SkillRegistry.load reads bounded text, enforces explicit trust and hashes, and checks frozen ordering. It does not execute a skill."
+  },
+  {
+    "id": "12968c099d064533e471e6965a92f5f56fb16d6ee008e3f89de1df7c1792da1e",
+    "file": "src/local_ai_router/integrations.py",
+    "categories": [
+      "subprocess.call"
+    ],
+    "count": 1,
+    "reason": "Known client help probes use fixed argv, timeout and hidden Windows processes. Explicit launch invokes the installed Codex/Claude CLI with argv and no shell; gateway credentials stay in the child environment."
+  },
+  {
+    "id": "f8edb0ee0355793a078dc7ef287730556e1485dc15f729296a453a30fc7db408",
+    "file": "src/local_ai_router/integrations.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Known client help probes use fixed argv, timeout and hidden Windows processes. Explicit launch invokes the installed Codex/Claude CLI with argv and no shell; gateway credentials stay in the child environment."
+  },
+  {
+    "id": "3dc18552f7160bf32ae0de00b723514b142741e087f2a5a4c67d79d78de89e96",
+    "file": "src/local_ai_router/provider_sdk.py",
+    "categories": [
+      "entry.load"
+    ],
+    "count": 1,
+    "reason": "Python entry points execute installed plugin code only when explicitly enabled in trusted configuration. Plugins are trusted code, not a sandbox."
+  },
+  {
+    "id": "9644244a31fff8c8dfebf894de21506ffe476655fb91c9cddf67dd15581016c6",
+    "file": "src/local_ai_router/receipts.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Read-only fixed git commands capture revision metadata with a timeout; no shell or repository mutation."
+  },
+  {
+    "id": "215186161fe131f7477fff4ad0c36906dc0a336d3642b84b4470cb243df2bb49",
+    "file": "src/local_ai_router/safety.py",
+    "categories": [
+      "asyncio.create_subprocess_exec"
+    ],
+    "count": 1,
+    "reason": "Registered validation argv is checked against shell/destructive commands, receives a scrubbed environment and bounded output, and has a timeout. Windows taskkill targets only the child process tree. Tests are trusted repository code."
+  },
+  {
+    "id": "8c9bfebe8cbac65abf3b7a3d7079f78a4e977146299182430881566ebfe8b345",
+    "file": "src/local_ai_router/safety.py",
+    "categories": [
+      "asyncio.create_subprocess_exec"
+    ],
+    "count": 1,
+    "reason": "Registered validation argv is checked against shell/destructive commands, receives a scrubbed environment and bounded output, and has a timeout. Windows taskkill targets only the child process tree. Tests are trusted repository code."
+  },
+  {
+    "id": "c45d6ca31bd4acc50cc99029b619a312e0bc3136dcaa6b4aa6e99f5fde828870",
+    "file": "src/local_ai_router/service.py",
+    "categories": [
+      "subprocess.Popen"
+    ],
+    "count": 1,
+    "reason": "Starts this Python interpreter and module with fixed argv, no shell, loopback-only validated settings and a hidden Windows process. Output stays in the local state directory."
+  },
+  {
+    "id": "2448143b1fa1b82eebbab3bbc525873feef0ccf8d9dc093bdb1f77017c00f66c",
+    "file": "src/local_ai_router/task_api.py",
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "AXIR.bind binds a validated portable plan to a registered repository. This is a method-name false positive, not a network listener."
+  },
+  {
+    "id": "99e9195dcfb9b0517bbd946c617749a82ee794ea25365e08f4a3c9b0e50385ce",
+    "file": "scripts/check_docs.py",
+    "categories": [
+      "subprocess.check_output"
+    ],
+    "count": 1,
+    "reason": "Fixed read-only git file inventory used for documentation checks; no shell."
+  },
+  {
+    "id": "3f30515ada5047701b3993225be9170f5bda8a1ca3bdb1e951fe3950516e2ceb",
+    "file": "scripts/check_local.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Contributor-invoked fixed check commands run with this interpreter or the installed zizmor binary. No user-controlled shell strings."
+  },
+  {
+    "id": "e797bcfd60356c08ae374c612e48095812c7891be3394396e370fb9f13cc2bc6",
+    "file": "scripts/check_local.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Contributor-invoked fixed check commands run with this interpreter or the installed zizmor binary. No user-controlled shell strings."
+  },
+  {
+    "id": "cc8992bc1d42ba59bcded69cb79781951b461b40adb3db2b2dd9e46a239c0130",
+    "file": "scripts/check_wheel.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Maintainer-invoked build/install checks use argv with timeouts and a temporary environment. Dependency installation is intentionally online; runtime smoke tests use mock mode."
+  },
+  {
+    "id": "781a535bf5e6840e4d0421a7b07c639dff7ade7bd047f4b3cc7245bc409d59e5",
+    "file": "scripts/configure_github_security.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Explicit maintainer command invokes gh through argv and JSON stdin, with a timeout. It uses existing authentication, never prints tokens and changes settings only with --apply."
+  },
+  {
+    "id": "32d0c3461172330beb8d85c328c17aacebd0c29670b302d3d19f753c4dd51d9c",
+    "file": "scripts/scan_public.py",
+    "categories": [
+      "subprocess.check_output"
+    ],
+    "count": 1,
+    "reason": "Fixed read-only git file inventory; no shell."
+  },
+  {
+    "id": "e95f51d506f75819e047aaae6eae7ec92c929789162809b75c8bcf81434c7093",
+    "file": "scripts/secret_audit.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Runs a pinned checksum-verified Gitleaks binary with argv, bounded timeouts and complete redaction. Only sanitized category/path/commit metadata leaves the report."
+  },
+  {
+    "id": "bb4165cb031881b3ba04be775aa9f8ce5f3749e34c9ad1da5596868d3132f804",
+    "file": "scripts/secret_audit.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "Runs a pinned checksum-verified Gitleaks binary with argv, bounded timeouts and complete redaction. Only sanitized category/path/commit metadata leaves the report."
+  }
+]

@@ -1,5 +1,7 @@
 # Claude setup
 
+Connect Claude Desktop or Claude Code to Accension to delegate repository tasks. Choose the client you use and review the preview before applying its connection.
+
 ## Companion MCP
 
 ```sh

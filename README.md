@@ -1,21 +1,19 @@
 # Accension
 
-[![Tests](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
+[![CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
+[![CodeQL in CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg?label=CodeQL)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**A local AI execution compiler: turn a repository task into a capability-constrained plan, run it across eligible models, and keep a receipt of the result.**
+**Accension helps your AI models work together.** It chooses a model for each task, controls spending, checks code changes and keeps a record of the result.
 
-Accension contains a gateway, router and orchestrator. Its repository execution path adds a portable task graph, bounded context, per-node privacy and spending contracts, registered validation, and durable evidence.
+Accension is open source and runs on your computer. You only pay cloud AI providers if you choose to use them. Local models have no API-token charges, though running them still uses your hardware and electricity.
 
-```text
-AI Gateway → AI Router → AI Orchestrator → Accension Execution Compiler
-                                               │
-            Goal → AXIR plan → model binding → execution → checks → receipt
-```
+Use it from a terminal, a local browser app, or a connected assistant such as Codex or Claude. No Accension account or hosted service is required. With no models connected, you can still set up providers, preview routing and run diagnostics.
 
-Ordinary gateway chat stays on a direct forwarding path; it does not compile a DAG. Repository compilation is explicit through `accs run`, the task API or MCP orchestration. A simple task can collapse to one worker node; planning and validation may still add overhead.
+## Why use it?
 
-Use local models, cloud models, or both. Keep routing, budgets, configuration, task graphs and history on your computer. No Accension account, hosted backend, telemetry, particular vendor or local LLM is required. With no connected models, setup, provider configuration, route simulation and diagnostics still work.
+Keep local and cloud models in one place. Choose privacy and spending limits. Let Accension route eligible work to models that fit those limits, then inspect its checks and recorded costs. Savings depend on the task and models; extra planning or repair work can cost more.
 
 [Install](#install-and-start-in-the-terminal) · [CLI commands and help](#cli-commands-and-help) · [Modes](#companion-and-sovereign-modes) · [Savings](#savings-pulse) · [Developer install](#developer-install) · [Guides](#guides)
 
@@ -49,9 +47,9 @@ accs repo add . --privacy CLOUD_REDACTED --check 'tests=["{python}","-m","pytest
 accs run "Add a greeting feature with tests" --repo . --budget 0.25 --max-cloud-context 12000
 ```
 
-## Open the local control plane
+## Use the local app
 
-`accs ui` opens **http://127.0.0.1:8765/ui** without sign-in or sign-out. Machine-local sessions retain same-origin, CSRF, Host and loopback checks. External API clients still use the separate local API token. Remote binding is refused, including `--remote`; use an authenticated tunnel when necessary.
+`accs ui` opens the local app at **http://127.0.0.1:8765/ui**. No Accension account is needed. Browser sessions and API clients have separate local security checks. The service only listens on this computer. See [Security](SECURITY.md) for details.
 
 ```sh
 accs start --background
@@ -69,13 +67,29 @@ The background hub needs no administrator rights and installs no autostart. `ser
 4. **Repositories:** register a root and trusted test/build commands.
 5. **Integrations:** preview and install a Codex or Claude connection.
 
-The UI also includes task execution, receipts, Routing Lab, Model DNA, and a persistent Savings Pulse header with light/dark/system themes.
+The UI also includes Skills, Presets, Logs, task execution, receipts, model evidence and a Savings Pulse header. Light, dark and system themes are available.
 
 ![Accension local control plane, mock demonstration](docs/screenshots/overview.jpg)
 
 Screenshots use a clearly marked mock workspace. Amounts illustrate configured demo prices and deterministic fixtures, not production savings. [Screenshot gallery](docs/screenshots/README.md).
 
 No YAML or Node.js is needed for this flow. A model remains ineligible until its capability, quality, privacy and price requirements are met.
+
+## Use skills and presets
+
+Already have useful AI skills or instruction files? Accension can find them, group them into reusable presets, and suggest useful combinations for a task. A skill is a reusable guide; a preset is a saved group of skills. Both are optional.
+
+```sh
+accs skill scan
+accs skill list
+accs skill search "debugging"
+accs skill info SKILL_ID
+accs skill trust SKILL_ID
+accs preset create focus --skill SKILL_ID
+accs run "Fix this bug" --repo . --preset focus
+```
+
+Use the **Skills** and **Presets** pages to manage these without editing YAML. Search works offline. The composer checks declared conflicts, dependencies, order and the active token budget. Local Recipe Memory records which combinations correlate with verified outcomes. It does not claim that skills cause better results. [Skills guide](docs/SKILLS.md).
 
 ## Compile, execute and inspect
 
@@ -90,9 +104,9 @@ accs receipt RUN_ID --markdown --output receipt.md
 accs lab compare RUN_ID
 ```
 
-`route` makes no model calls or repository edits. `plan` may invoke an eligible model and saves a reviewable DAG. `execute` applies bounded, hash-checked edits and runs registered validation. `run` combines both. Cloud calibration additionally requires `--allow-paid` after reviewing the quote.
+`route` makes no model calls or repository edits. `plan` may invoke an eligible model and saves a reviewable task plan. `execute` applies bounded, hash-checked edits and runs registered validation. `run` combines both. Cloud calibration additionally requires `--allow-paid` after reviewing the quote.
 
-The primary CLI is **`accs`**. Compatibility names **`accension`**, **`router`**, Python **`local_ai_router`**, and MCP **`local-ai-router`** remain supported. See [CLI reference](docs/CLI.md) and [V1 migration](MIGRATION_V1_V2.md).
+The primary CLI is **`accs`**. Compatibility names **`accension`**, **`router`**, Python **`local_ai_router`**, and MCP **`local-ai-router`** remain supported. See [CLI reference](docs/CLI.md) and [Upgrade notes](docs/UPGRADE_NOTES.md).
 
 ## CLI commands and help
 
@@ -308,7 +322,7 @@ For an unknown model, start with `accs model list` or refresh its provider. For 
 
 The [complete CLI reference](docs/CLI.md) also covers compatibility commands such as `models`, `discover`, `integration`, `profiles`, `eval`, `azure-login`, `enroll` and `demo`. See [troubleshooting](TROUBLESHOOTING.md) for provider/authentication and recovery details.
 
-## Execution compiler features
+## Advanced: saved plans and execution evidence
 
 - Deterministic local decisions, generic roles, capability/quality/privacy gates and task-level fallback.
 - Protocol-based plugins for cloud and local providers, native credentials and conservative discovery.
@@ -392,6 +406,25 @@ On Windows the executable is `.venv/Scripts/python.exe`; on Linux/macOS it is `.
 
 Contribution paths include provider plugins, transport adapters, capability probes, benchmark fixtures, UI, documentation, routing policies and client integrations. [Contributor guide](CONTRIBUTING.md).
 
+## Troubleshooting
+
+If something fails, you do not have to guess. Accension keeps local redacted logs and links them to the task trace.
+
+```sh
+accs doctor
+accs logs
+accs logs tail
+accs logs show ERROR_ID
+```
+
+Logs rotate automatically. They omit prompt bodies, source files, full skill text and provider response bodies. Use **Logs** in the app to filter errors and open a related trace. [Logging guide](docs/LOGGING.md).
+
+## How contributions are protected
+
+Every Pull Request runs automated tests and security checks. Changes to `main` require the repository owner's review, and direct pushes are blocked. Owner-authored PRs use a PR-only review bypass to avoid GitHub's self-review restriction; they must still pass all checks. Passing CI does not automatically merge a contribution.
+
+Start with [Contributing](CONTRIBUTING.md), run `python scripts/check_local.py`, and submit a PR. The [GitHub security guide](docs/GITHUB_SECURITY.md) explains the merge policy and bootstrap setup. CI reduces risk; it cannot guarantee the absence of malicious code.
+
 ## Guides
 
 | Topic | Documentation |
@@ -403,7 +436,7 @@ Contribution paths include provider plugins, transport adapters, capability prob
 | Clients | [Codex](CODEX_SETUP.md), [Claude](CLAUDE_SETUP.md), [MCP](MCP.md) |
 | Execution compiler | [CLI](docs/CLI.md), [AXIR](docs/AXIR.md), [Model DNA](docs/MODEL_DNA.md), [receipts](docs/EXECUTION_RECEIPTS.md) |
 | Modes and accounting | [Modes](docs/MODES.md), [egress budgets](docs/EGRESS_BUDGETS.md), [Savings Pulse](docs/SAVINGS.md) |
-| Operations | [Migration](MIGRATION_V1_V2.md), [cache](CACHE.md), [troubleshooting](TROUBLESHOOTING.md), [contributing](CONTRIBUTING.md) |
+| Operations | [Migration](docs/UPGRADE_NOTES.md), [cache](CACHE.md), [troubleshooting](TROUBLESHOOTING.md), [contributing](CONTRIBUTING.md) |
 
 ## Current limits
 
