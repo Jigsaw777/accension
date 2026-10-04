@@ -206,6 +206,86 @@ def test_command_safety_and_secret_redaction():
     assert redact({"api_key": "abc"})["api_key"] == "[REDACTED]"
 
 
+@pytest.mark.parametrize("label", ["", "RSA ", "EC ", "OPENSSH ", "ENCRYPTED "])
+def test_private_key_redaction_complete_incomplete_and_multiple_blocks(label):
+    from local_ai_router.safety import SECRET
+
+    start, end = "-----BEGIN " + label + "PRIVATE KEY-----", "-----END " + label + "PRIVATE KEY-----"
+    key = start + "\nprivate body\n" + end
+    assert SECRET.search(start)
+    assert redact("before " + key + " between " + key + " after") == "before [REDACTED] between [REDACTED] after"
+    assert redact("before " + start + "\nprivate body") == "before [REDACTED]"
+    assert redact(key.lower()) == "[REDACTED]"
+
+
+def test_secret_checks_handle_large_adversarial_input_promptly():
+    import subprocess
+    import sys
+
+    # A child timeout bounds regressions without hanging pytest. The previous
+    # patterns take tens of seconds/minutes for these repeated missing endings.
+    code = """
+from local_ai_router.safety import SECRET, redact
+assert not SECRET.search('-----BEGIN x' * 40000)
+header = '-----BEGIN ' + 'RSA ' + 'PRIVATE KEY-----'
+assert redact((header + '\\n') * 40000) == '[REDACTED]'
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, timeout=10)
+
+
+async def test_validation_redacts_bounded_output_without_reopening_path(repo, monkeypatch):
+    from pathlib import Path
+
+    from local_ai_router import safety
+
+    original_open = Path.open
+    opened = []
+
+    def open_once(path, *args, **kwargs):
+        if path.name == "validation.log":
+            opened.append(path)
+            assert len(opened) == 1, "Validation output must use the original handle after the child exits"
+        return original_open(path, *args, **kwargs)
+
+    async def spawn(*args, **kwargs):
+        class Process:
+            returncode = 0
+
+            async def wait(self):
+                output = kwargs["stdout"]
+                output.write(b"x" * 7000 + b"\napi_key=FAKE_ABCDEF12345\n")
+                output.flush()
+
+        return Process()
+
+    monkeypatch.setattr(Path, "open", open_once)
+    monkeypatch.setattr(safety.asyncio, "create_subprocess_exec", spawn)
+    result = await safety.validate(repo, {"tests": ["{python}", "-m", "unittest"]}, ["tests"], 2)
+    assert result[0]["passed"]
+    assert "FAKE_ABCDEF12345" not in result[0]["output"]
+    assert len(result[0]["output"]) <= 6000
+    with original_open(repo / ".router/validation.log", encoding="utf-8") as log:
+        assert log.read() == result[0]["output"]
+
+
+async def test_execution_paths_require_registered_repository(engine, repo, tmp_path):
+    from local_ai_router.schema import Request
+
+    outside = tmp_path / "unregistered"
+    outside.mkdir()
+    request = Request(task="Add a greeting", repo_path=str(outside))
+    for action in (engine.plan(request), engine.run(request), engine.execute_plan("unknown", str(outside))):
+        with pytest.raises(ValueError, match="not registered"):
+            await action
+    with pytest.raises(ValueError, match="not registered"):
+        engine.skills.resolve(request, "coding")
+    assert not (outside / ".router").exists()
+    # Normalized aliases must still bind to the configured root.
+    request.repo_path = str(repo / ".." / repo.name)
+    plan = await engine.plan(request)
+    assert (repo / ".router/plans" / (plan.plan_id + ".json")).is_file()
+
+
 async def test_cache_invalidates_dirty_added_removed_files(engine, repo):
     (repo / "a.py").write_text("def f(): return 1\n")
 

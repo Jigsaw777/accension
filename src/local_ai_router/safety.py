@@ -12,8 +12,10 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 
+PRIVATE_KEY_START = re.compile(r"-----BEGIN [^-\r\n]{0,64}PRIVATE KEY-----", re.I)
+PRIVATE_KEY_END = re.compile(r"-----END [^-\r\n]{0,64}PRIVATE KEY-----", re.I)
 SECRET = re.compile(
-    r"(?i)(?:bearer\s+[\w.-]{12,}|(?:api[_-]?key|password|secret|access_token)[\"']?\s*[:=]\s*[\"']?[^\s\"',}]{8,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN .*PRIVATE KEY-----)"
+    r"(?i)(?:bearer\s+[\w.-]{12,}|(?:api[_-]?key|password|secret|access_token)[\"']?\s*[:=]\s*[\"']?[^\s\"',}]{8,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [^-\r\n]{0,64}PRIVATE KEY-----)"
 )
 SENSITIVE = re.compile(r"(?i)(^|[/\\])(?:\.env(?:\..*)?|credentials|id_rsa|id_ed25519|.*\.(?:pem|key|pfx|p12))$")
 FORBIDDEN_PARTS = {".git", ".router", ".codex", ".agents", ".aws", ".ssh", ".venv", "node_modules"}
@@ -30,10 +32,15 @@ def redact(value):
     if isinstance(value, list):
         return [redact(x) for x in value]
     if isinstance(value, str):
-        value = re.sub(
-            r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", "[REDACTED]", value, flags=re.S
-        )
-        return SECRET.sub("[REDACTED]", value)
+        # Scan each block once. Repeated unterminated headers must not backtrack
+        # across the remaining input, and incomplete key bodies must stay private.
+        parts, cursor = [], 0
+        while start := PRIVATE_KEY_START.search(value, cursor):
+            end = PRIVATE_KEY_END.search(value, start.end())
+            parts.extend((value[cursor : start.start()], "[REDACTED]"))
+            cursor = end.end() if end else len(value)
+        parts.append(value[cursor:])
+        return SECRET.sub("[REDACTED]", "".join(parts))
     return value
 
 
@@ -247,7 +254,7 @@ async def validate(root: Path, commands: dict[str, list[str]], names: list[str],
         # Output to a file prevents unbounded pipe buffering. Only a bounded tail is returned.
         log = safe_path(root, ".router/validation.log", internal=True)
         log.parent.mkdir(exist_ok=True)
-        with log.open("wb") as output:
+        with log.open("w+b") as output:
             proc = await asyncio.create_subprocess_exec(
                 *argv,
                 cwd=root,
@@ -281,10 +288,13 @@ async def validate(root: Path, commands: dict[str, list[str]], names: list[str],
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 timed_out = True
-        with log.open("rb") as f:
-            f.seek(max(0, log.stat().st_size - 6000))
-            tail = redact(f.read().decode("utf-8", errors="replace"))
-        log.write_text(tail, encoding="utf-8")
+            # Keep the original handle: repository tests may replace this pathname.
+            size = output.seek(0, os.SEEK_END)
+            output.seek(max(0, size - 6000))
+            tail = redact(output.read().decode("utf-8", errors="replace"))
+            output.seek(0)
+            output.write(tail.encode("utf-8"))
+            output.truncate()
         results.append(
             {
                 "check": name,

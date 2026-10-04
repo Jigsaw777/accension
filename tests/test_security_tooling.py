@@ -73,7 +73,105 @@ def test_codeql_alert_gate_rejects_security_findings_without_leaking_code():
     blocked = checker.findings(document)
     assert [row["rule"] for row in blocked] == ["security", "correctness"]
     assert "private source" not in str(blocked)
-    assert checker.findings({"runs": []}) == []
+    with pytest.raises(ValueError, match="no analysis runs"):
+        checker.findings({"runs": []})
+
+
+@pytest.fixture
+def codeql_report():
+    # Shape of the PR's actual CodeQL SARIF: query-pack rules live in extensions,
+    # not driver.rules, and result.level can be omitted in favor of the rule default.
+    return {
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {"name": "CodeQL", "rules": []},
+                    "extensions": [
+                        {"name": "codeql-action/pr-diff-range", "rules": []},
+                        {
+                            "name": "codeql/python-queries",
+                            "rules": [
+                                {
+                                    "id": rule,
+                                    "properties": {"security-severity": "7.5", "tags": ["security"]},
+                                    "defaultConfiguration": {"level": level},
+                                }
+                                for rule, level in (("py/path-injection", "error"), ("py/polynomial-redos", "warning"))
+                            ],
+                        },
+                    ],
+                },
+                "results": [
+                    {
+                        "ruleId": rule,
+                        "rule": {"id": rule, "index": index, "toolComponent": {"index": 1}},
+                        "message": {"text": "private source excerpt"},
+                    }
+                    for index, rule in enumerate(("py/path-injection", "py/polynomial-redos"))
+                    for _ in range(4)
+                ],
+            }
+        ],
+    }
+
+
+def test_codeql_gate_blocks_real_extension_format(codeql_report, tmp_path, monkeypatch, capsys):
+    import json
+
+    checker = module("check_codeql")
+    blocked = checker.findings(codeql_report)
+    assert len(blocked) == 8
+    assert {row["severity"] for row in blocked} == {7.5}
+    assert {row["level"] for row in blocked} == {"error", "warning"}
+    report = tmp_path / "python.sarif"
+    report.write_text(json.dumps(codeql_report), encoding="utf-8-sig")
+    monkeypatch.setattr("sys.argv", ["check_codeql", str(tmp_path)])
+    with pytest.raises(SystemExit) as exc:
+        checker.main()
+    assert exc.value.code == 1
+    assert "private source" not in capsys.readouterr().out
+    codeql_report["runs"][0]["results"] = []
+    assert checker.findings(codeql_report) == []
+
+
+def test_codeql_references_stay_scoped_to_their_component(codeql_report):
+    checker = module("check_codeql")
+    run = codeql_report["runs"][0]
+    # A driver rule with the same ID must not override the query-pack severity.
+    run["tool"]["driver"]["rules"] = [{"id": "py/path-injection", "properties": {"security-severity": "0"}}]
+    result = run["results"][0]
+    result["rule"]["toolComponent"] = {"name": "codeql/python-queries"}
+    del result["rule"]["index"]
+    assert len(checker.findings(codeql_report)) == 8
+    run["results"] = [{"ruleIndex": 0}]
+    assert checker.findings(codeql_report) == []
+
+
+@pytest.mark.parametrize(
+    "fault", ["component", "rule_index", "unknown_rule", "mismatch", "severity", "missing_severity", "failed_scan"]
+)
+def test_codeql_gate_refuses_incomplete_or_invalid_metadata(codeql_report, fault):
+    checker = module("check_codeql")
+    run = codeql_report["runs"][0]
+    result = run["results"][0]
+    rule = run["tool"]["extensions"][1]["rules"][0]
+    if fault == "component":
+        result["rule"]["toolComponent"]["index"] = -1
+    elif fault == "rule_index":
+        result["rule"]["index"] = 100
+    elif fault == "unknown_rule":
+        result["rule"] = {}
+    elif fault == "mismatch":
+        result["ruleId"] = "missing"
+    elif fault == "severity":
+        rule["properties"]["security-severity"] = "NaN"
+    elif fault == "missing_severity":
+        del rule["properties"]["security-severity"]
+    else:
+        run["invocations"] = [{"executionSuccessful": False}]
+    with pytest.raises(ValueError):
+        checker.findings(codeql_report)
 
 
 def test_github_rules_owner_bypass_cannot_skip_checks_or_push_directly():

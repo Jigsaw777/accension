@@ -366,8 +366,9 @@ class SkillRegistry:
             return SkillContract()
         name = request.preset
         if name is None:
+            repo = self.settings.repository(request.repo_path)
             for scope in (
-                "repo:" + cache_key(str(Path(request.repo_path).resolve())),
+                "repo:" + cache_key(str(Path(repo.path).resolve(strict=True))),
                 "session:" + request.session_id,
                 "global",
             ):

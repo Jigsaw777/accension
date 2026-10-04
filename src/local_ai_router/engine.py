@@ -191,8 +191,8 @@ class Engine:
         rid = request_id or uid()
         if SECRET.search(request.task) or any(SECRET.search(c) for c in request.constraints):
             raise ValueError("Secret-like request text cannot be sent to a model")
-        root = Path(request.repo_path).resolve()
-        repo = self.settings.repository(str(root))
+        repo = self.settings.repository(request.repo_path)
+        root = Path(repo.path).resolve(strict=True)
         if not locked:
             with repository_scope(repo), repo_lock(root), self.request_scope(request, repo):
                 try:
@@ -489,10 +489,9 @@ class Engine:
         from .observability import correlation
 
         rid = (correlation.get() or {}).get("request_id") or uid()
-        root = Path(request.repo_path).resolve()
-        self.settings.repository(str(root))
+        repo = self.settings.repository(request.repo_path)
+        root = Path(repo.path).resolve(strict=True)
         self.store.trace(rid, "ingress", task_hash=cache_key(request.task), repo_hash=cache_key(str(root)))
-        repo = self.settings.repository(str(root))
         with repository_scope(repo), repo_lock(root), self.request_scope(request, repo):
             try:
                 plan = await self.plan(request, rid, locked=True)
@@ -505,9 +504,9 @@ class Engine:
 
     @active_operation
     async def execute_plan(self, plan_id, repo_path):
-        root = Path(repo_path).resolve()
-        self.settings.repository(str(root))
-        with repository_scope(self.settings.repository(str(root))), repo_lock(root):
+        repo = self.settings.repository(repo_path)
+        root = Path(repo.path).resolve(strict=True)
+        with repository_scope(repo), repo_lock(root):
             return await self._execute(plan_id, root)
 
     @active_operation
