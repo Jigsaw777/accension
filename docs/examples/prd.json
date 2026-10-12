@@ -1,0 +1,65 @@
+{
+  "command_id": "8144e00a-4573-4bf4-99a4-0b6274c4f9a1",
+  "workspace_id": "102d30a3-e739-40ce-a734-5f4095e8ae95",
+  "project_id": "a45bb470-1a27-4584-95a0-0d882b122993",
+  "title": "Greeting feature",
+  "template_id": "prd-default",
+  "template_version": 1,
+  "spec": {
+    "problem_statement": "Provide predictable greetings for named and blank input.",
+    "background": "A deterministic local Workbench demonstration.",
+    "objectives": [
+      "Return stable greetings and cover edge cases."
+    ],
+    "scope": [
+      "greeting.py",
+      "test_greeting.py",
+      "USAGE.md"
+    ],
+    "out_of_scope": [
+      "Network calls"
+    ],
+    "functional_requirements": [
+      {
+        "id": "FR-1",
+        "text": "Strip name whitespace and default blank input to world."
+      }
+    ],
+    "nonfunctional_requirements": [
+      {
+        "id": "NFR-1",
+        "text": "Run without external network."
+      }
+    ],
+    "constraints": [
+      "Use existing Python standard library."
+    ],
+    "assumptions": [
+      "A Python test runner is registered."
+    ],
+    "dependencies": [],
+    "risks": [
+      {
+        "description": "Blank names handled inconsistently.",
+        "impact": "Wrong output.",
+        "mitigation": "Behavioral unit tests."
+      }
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "text": "Named and blank greeting tests pass."
+      }
+    ],
+    "architecture_notes": "Pure function plus unittest and documentation.",
+    "milestones": [
+      {
+        "title": "Greeting and tests",
+        "requirement_ids": [
+          "FR-1",
+          "NFR-1"
+        ]
+      }
+    ]
+  }
+}

@@ -1,5 +1,7 @@
 """Definitions cannot fabricate daemon capacity or grant arbitrary adapters."""
 
+from uuid import UUID
+
 import pytest
 
 from local_ai_router.workbench.policy import CAPABILITIES, Principal
@@ -19,6 +21,44 @@ async def agents(engine):
 
 def definition(workspace, **extra):
     return {"command_id": identity(), "name": "Built-in worker", "allowed_workspaces": [workspace.id], **extra}
+
+
+async def test_workspace_agents_not_hidden_by_global_limit(agents):
+    runtime, workspace = agents
+    other = runtime.service.create("workspace", {"command_id": identity(), "name": "Other"}, HUMAN).body
+    wanted = runtime.agents.configure(definition(workspace), HUMAN).body
+    other_agent = runtime.agents.configure(definition(workspace, allowed_workspaces=[other["id"]]), HUMAN).body
+    db = runtime.service.store.db
+    sample = dict(db.execute("SELECT * FROM wb_agent_definitions WHERE id=?", (other_agent["id"],)).fetchone())
+    columns = tuple(sample)
+    with runtime.engine.store.transaction():
+        for number in range(1, 202):
+            row = {**sample, "id": str(UUID(int=number, version=4)), "name": "Other " + str(number)}
+            db.execute(
+                "INSERT INTO wb_agent_definitions("
+                + ",".join(columns)
+                + ") VALUES("
+                + ",".join("?" for _ in columns)
+                + ")",
+                tuple(row[column] for column in columns),
+            )
+    assert [row["id"] for row in runtime.agents.list(workspace.id, HUMAN)] == [wanted["id"]]
+
+
+async def test_agent_cursor_pages_are_scoped_and_searchable(agents):
+    runtime, workspace = agents
+    for number in range(5):
+        runtime.agents.configure(definition(workspace, name="Worker " + str(number)), HUMAN)
+    page = runtime.agents.list_page(workspace.id, HUMAN, limit=2)
+    seen = [row["id"] for row in page["items"]]
+    cursor = page["next_cursor"]
+    while page["has_more"]:
+        page = runtime.agents.list_page(workspace.id, HUMAN, limit=2, cursor=page["next_cursor"])
+        seen.extend(row["id"] for row in page["items"])
+    assert len(seen) == len(set(seen)) == 5
+    assert len(runtime.agents.list_page(workspace.id, HUMAN, query="Worker 4")["items"]) == 1
+    with pytest.raises(WorkbenchError):
+        runtime.agents.list_page(workspace.id, HUMAN, cursor=cursor, query="Worker 4")
 
 
 async def test_definition_does_not_imply_running_instance(agents):

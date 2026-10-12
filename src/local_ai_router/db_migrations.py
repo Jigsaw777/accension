@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import errno
+import json
 import os
 import sqlite3
 import time
 from contextlib import closing, contextmanager
 from pathlib import Path
 
-SUPPORTED_VERSION = 7
+SUPPORTED_VERSION = 9
 MIGRATION_LOCK_TIMEOUT = 10
 
 SCHEMA_STATEMENTS = (
@@ -290,6 +291,80 @@ for name, columns in DEVICE_COLUMNS.items():
     TABLE_COLUMNS[name] = {column.split()[0] for column in columns.split(";")}
 
 
+FEATURE_COLUMNS = {
+    "wb_agent_definitions": {"model_bindings_json"},
+    "wb_attempts": {"queued_at"},
+    "calls": {
+        "occurred_at",
+        "provider_id",
+        "model_snapshot_json",
+        "usage_source",
+        "cost_source",
+        "reported_usage_fields_json",
+    },
+}
+FEATURE_STATEMENTS = [
+    'ALTER TABLE wb_agent_definitions ADD COLUMN model_bindings_json TEXT NOT NULL DEFAULT \'{"executor":{"mode":"auto","primary_model_id":null,"fallback_model_ids":[]},"repairer":{"mode":"auto","primary_model_id":null,"fallback_model_ids":[]},"reviewer":{"mode":"auto","primary_model_id":null,"fallback_model_ids":[]}}\'',
+    "ALTER TABLE wb_attempts ADD COLUMN queued_at INTEGER",
+    "ALTER TABLE calls ADD COLUMN occurred_at INTEGER",
+    "ALTER TABLE calls ADD COLUMN provider_id TEXT",
+    "ALTER TABLE calls ADD COLUMN model_snapshot_json TEXT",
+    "ALTER TABLE calls ADD COLUMN usage_source TEXT NOT NULL DEFAULT 'legacy_unknown'",
+    "ALTER TABLE calls ADD COLUMN cost_source TEXT NOT NULL DEFAULT 'legacy_unknown'",
+    "ALTER TABLE calls ADD COLUMN reported_usage_fields_json TEXT",
+    "CREATE TABLE wb_agent_workspaces(agent_id TEXT NOT NULL REFERENCES wb_agent_definitions(id),workspace_id TEXT NOT NULL REFERENCES wb_workspaces(id),PRIMARY KEY(agent_id,workspace_id))",
+    "CREATE INDEX wb_agent_workspace ON wb_agent_workspaces(workspace_id,agent_id)",
+    "CREATE TABLE wb_activity_entries(id INTEGER PRIMARY KEY,source_key TEXT UNIQUE NOT NULL,workspace_id TEXT NOT NULL REFERENCES wb_workspaces(id),project_id TEXT,item_id TEXT,agent_definition_id TEXT REFERENCES wb_agent_definitions(id),attempt_id TEXT REFERENCES wb_attempts(id),occurred_at INTEGER NOT NULL,actor_type TEXT NOT NULL,actor_id TEXT NOT NULL,event_type TEXT NOT NULL,metadata_json TEXT NOT NULL CHECK(length(CAST(metadata_json AS BLOB))<=8192),source_event_id TEXT REFERENCES wb_events(event_id),FOREIGN KEY(workspace_id,project_id) REFERENCES wb_projects(workspace_id,id),FOREIGN KEY(workspace_id,item_id) REFERENCES wb_work_items(workspace_id,id))",
+    "CREATE INDEX wb_activity_item ON wb_activity_entries(workspace_id,item_id,id DESC)",
+    "CREATE INDEX wb_activity_agent ON wb_activity_entries(workspace_id,agent_definition_id,id DESC)",
+    "CREATE INDEX wb_activity_project ON wb_activity_entries(workspace_id,project_id,id DESC)",
+    "CREATE TABLE wb_attempt_facts(attempt_id TEXT PRIMARY KEY REFERENCES wb_attempts(id),assignment_id TEXT NOT NULL REFERENCES wb_assignments(id),agent_definition_id TEXT NOT NULL REFERENCES wb_agent_definitions(id),agent_revision INTEGER NOT NULL,agent_name TEXT NOT NULL,model_bindings_json TEXT NOT NULL,workspace_id TEXT NOT NULL REFERENCES wb_workspaces(id),project_id TEXT NOT NULL,item_id TEXT NOT NULL,adapter TEXT NOT NULL,terminal_state TEXT,enqueued_at INTEGER,started_at INTEGER,finished_at INTEGER,priced_usage_cost_microusd INTEGER,budget_estimate_microusd INTEGER,connector_reported_cost_microusd INTEGER,unknown_call_count INTEGER NOT NULL DEFAULT 0,uncertain_call_count INTEGER NOT NULL DEFAULT 0,verified_outcome INTEGER,metric_version INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL,FOREIGN KEY(workspace_id,project_id) REFERENCES wb_projects(workspace_id,id),FOREIGN KEY(workspace_id,item_id) REFERENCES wb_work_items(workspace_id,id))",
+    "CREATE INDEX wb_fact_agent ON wb_attempt_facts(workspace_id,agent_definition_id,finished_at)",
+    "CREATE INDEX wb_fact_project ON wb_attempt_facts(workspace_id,project_id,finished_at)",
+    "CREATE TABLE wb_attempt_call_facts(attempt_id TEXT NOT NULL REFERENCES wb_attempts(id),call_id TEXT NOT NULL REFERENCES calls(id),model_id TEXT NOT NULL,provider_id TEXT,role TEXT NOT NULL,usage_source TEXT NOT NULL,cost_source TEXT NOT NULL,reported_usage_json TEXT,priced_usage_cost_microusd INTEGER,budget_estimate_microusd INTEGER,connector_reported_cost_microusd INTEGER,PRIMARY KEY(attempt_id,call_id))",
+    "CREATE INDEX wb_board_active ON wb_work_items(workspace_id,status,priority,id) WHERE archived_at IS NULL",
+]
+FEATURE_COLUMNS.update(
+    {
+        "wb_agent_workspaces": set("agent_id workspace_id".split()),
+        "wb_activity_entries": set(
+            "id source_key workspace_id project_id item_id agent_definition_id attempt_id occurred_at actor_type actor_id event_type metadata_json source_event_id".split()
+        ),
+        "wb_attempt_facts": set(
+            "attempt_id assignment_id agent_definition_id agent_revision agent_name model_bindings_json workspace_id project_id item_id adapter terminal_state enqueued_at started_at finished_at priced_usage_cost_microusd budget_estimate_microusd connector_reported_cost_microusd unknown_call_count uncertain_call_count verified_outcome metric_version updated_at".split()
+        ),
+        "wb_attempt_call_facts": set(
+            "attempt_id call_id model_id provider_id role usage_source cost_source reported_usage_json priced_usage_cost_microusd budget_estimate_microusd connector_reported_cost_microusd".split()
+        ),
+    }
+)
+for name, columns in FEATURE_COLUMNS.items():
+    TABLE_COLUMNS.setdefault(name, set()).update(columns)
+
+DELIVERY_STATEMENTS = [
+    "CREATE TABLE wb_delivery_batches(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES wb_workspaces(id),project_id TEXT NOT NULL,prd_id TEXT NOT NULL,prd_revision INTEGER NOT NULL,import_id TEXT NOT NULL REFERENCES wb_plan_imports(id),import_hash TEXT NOT NULL,state TEXT NOT NULL,revision INTEGER NOT NULL,approved_by TEXT NOT NULL,actor_type TEXT NOT NULL CHECK(actor_type='HUMAN'),approved_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,selection_hash TEXT NOT NULL,policy_hash TEXT NOT NULL,max_cost_microusd INTEGER NOT NULL CHECK(max_cost_microusd>=0),created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,cancellation_reason TEXT,FOREIGN KEY(workspace_id,project_id) REFERENCES wb_projects(workspace_id,id))",
+    "CREATE TABLE wb_delivery_members(batch_id TEXT NOT NULL REFERENCES wb_delivery_batches(id),item_id TEXT NOT NULL REFERENCES wb_work_items(id),approved_contract_revision INTEGER NOT NULL,approved_contract_hash TEXT NOT NULL,allowed_agent_revisions_json TEXT NOT NULL,model_policy_hash TEXT NOT NULL,member_state TEXT NOT NULL,last_attempt_id TEXT REFERENCES wb_attempts(id),active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),blocked_reason TEXT,PRIMARY KEY(batch_id,item_id))",
+    "CREATE UNIQUE INDEX wb_delivery_active_item ON wb_delivery_members(item_id) WHERE active=1",
+    "CREATE INDEX wb_delivery_due ON wb_delivery_batches(state,id)",
+    "CREATE TABLE wb_delivery_grants(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES wb_delivery_batches(id),principal_id TEXT NOT NULL,device_credential_id TEXT REFERENCES wb_device_credentials(id),scope_hash TEXT NOT NULL,expires_at INTEGER NOT NULL,revoked_at INTEGER)",
+    "CREATE TABLE wb_delivery_reservations(attempt_id TEXT PRIMARY KEY REFERENCES wb_attempts(id),batch_id TEXT NOT NULL REFERENCES wb_delivery_batches(id),reserved_microusd INTEGER NOT NULL CHECK(reserved_microusd>=0),settled_microusd INTEGER,state TEXT NOT NULL)",
+    "ALTER TABLE wb_attempts ADD COLUMN batch_id TEXT REFERENCES wb_delivery_batches(id)",
+]
+DELIVERY_COLUMNS = {
+    "wb_delivery_batches": set(
+        "id workspace_id project_id prd_id prd_revision import_id import_hash state revision approved_by actor_type approved_at expires_at selection_hash policy_hash max_cost_microusd created_at updated_at cancellation_reason".split()
+    ),
+    "wb_delivery_members": set(
+        "batch_id item_id approved_contract_revision approved_contract_hash allowed_agent_revisions_json model_policy_hash member_state last_attempt_id active blocked_reason".split()
+    ),
+    "wb_delivery_grants": set("id batch_id principal_id device_credential_id scope_hash expires_at revoked_at".split()),
+    "wb_delivery_reservations": set("attempt_id batch_id reserved_microusd settled_microusd state".split()),
+    "wb_attempts": {"batch_id"},
+}
+for name, columns in DELIVERY_COLUMNS.items():
+    TABLE_COLUMNS.setdefault(name, set()).update(columns)
+
+
 class UnsupportedDatabaseVersion(RuntimeError):
     """The database was written by a newer Accension version."""
 
@@ -348,6 +423,26 @@ def initialize_database(db: sqlite3.Connection, path: Path) -> None:
                 db.execute(
                     "CREATE INDEX wb_versions_entity ON wb_entity_versions(workspace_id,entity_type,entity_id,sequence DESC)"
                 )
+            if version < 8:
+                for statement in FEATURE_STATEMENTS:
+                    db.execute(statement)
+                from .workbench.schema import AgentDefinition
+
+                columns = [column[1] for column in db.execute("PRAGMA table_info(wb_agent_definitions)")]
+                for row in db.execute("SELECT * FROM wb_agent_definitions"):
+                    data = dict(zip(columns, row, strict=True))
+                    data["enabled"] = bool(data["enabled"])
+                    for key in tuple(data):
+                        if key.endswith("_json"):
+                            data[key.removesuffix("_json")] = json.loads(data.pop(key))
+                    definition = AgentDefinition.model_validate(data)
+                    db.executemany(
+                        "INSERT INTO wb_agent_workspaces VALUES(?,?)",
+                        [(definition.id, ws) for ws in set(definition.allowed_workspaces)],
+                    )
+            if version < 9:
+                for statement in DELIVERY_STATEMENTS:
+                    db.execute(statement)
             _validate_layout(_table_names(db), db, complete=True, workbench=True)
             _verify_database(db)
             db.execute(f"PRAGMA user_version={SUPPORTED_VERSION}")
@@ -396,6 +491,12 @@ def _validate_layout(
     if unknown:
         raise DatabaseMigrationError(f"Unrecognized tables in Accension database: {', '.join(sorted(unknown))}")
     required = CORE_TABLES | (WORKBENCH_COLUMNS.keys() if workbench else set())
+    if workbench and version >= 9:
+        required = required | DELIVERY_COLUMNS.keys()
+    if version < 8:
+        required = required - (FEATURE_COLUMNS.keys() - {"calls", "wb_attempts", "wb_agent_definitions"})
+    elif workbench:
+        required = required | FEATURE_COLUMNS.keys()
     if workbench and version >= 6:
         required = required | DEVICE_COLUMNS.keys()
     missing_tables = required - tables
@@ -405,6 +506,10 @@ def _validate_layout(
         )
     for table in tables:
         expected = TABLE_COLUMNS[table]
+        if version < 8:
+            expected = expected - FEATURE_COLUMNS.get(table, set())
+        if version < 9:
+            expected = expected - DELIVERY_COLUMNS.get(table, set())
         if table == "wb_projects" and version < 5:
             expected = expected - {"review_policy"}
         if table == "calls" and not complete:

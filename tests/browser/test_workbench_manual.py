@@ -283,3 +283,95 @@ def test_render_discards_delayed_settings(page, action):
         playwright.expect(page.get_by_label("Template YAML")).to_have_value(re.compile("prd-default"))
     else:
         playwright.expect(page.locator("#content")).to_contain_text("Execution dispatcher:")
+
+
+@pytest.mark.parametrize("field", ["search", "mobile"])
+def test_board_event_preserves_view_state(page, server, tmp_path, field):
+    project(page)
+    create_item(page, "Feature ticket")
+    page.set_viewport_size({"width": 360, "height": 800})
+    page.get_by_label("Search titles").fill("Feature")
+    page.get_by_label("Visible board state").select_option("WAITING_FOR_HUMAN")
+    playwright.expect(page.locator('.column[data-state="WAITING_FOR_HUMAN"]')).to_contain_text("No work items")
+    requests = []
+    page.on(
+        "request",
+        lambda request: (
+            requests.append(request.url) if "/board?" in request.url or "/work-items?" in request.url else None
+        ),
+    )
+    workspace = page.locator("#workspace").input_value()
+    with httpx.Client(base_url=server[0], trust_env=False, headers={"Authorization": "Bearer " + server[1]}) as client:
+        item = client.get("/accs/v1/workbench/work-items", params={"workspace_id": workspace}).json()["items"][0]
+        with page.expect_response(
+            lambda response: "/board?" in response.url and "states=WAITING_FOR_HUMAN" in response.url
+        ):
+            response = client.patch(
+                "/accs/v1/workbench/work-items/" + item["id"],
+                params={"workspace_id": workspace},
+                json={"command_id": identity(), "expected_revision": item["revision"], "title": "Feature updated"},
+            )
+            assert response.status_code == 200
+    import json
+
+    (tmp_path / "board-event-baseline.json").write_text(
+        json.dumps(
+            {
+                "column_requests": len(requests),
+                "search": page.get_by_label("Search titles").input_value(),
+                "mobile_state": page.get_by_label("Visible board state").input_value(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    if field == "search":
+        playwright.expect(page.get_by_label("Search titles")).to_have_value("Feature")
+    else:
+        playwright.expect(page.get_by_label("Visible board state")).to_have_value("WAITING_FOR_HUMAN")
+    assert not any("/work-items?" in request for request in requests)
+    assert len(requests) <= 2
+
+
+def test_board_filters_and_list_share_results(page):
+    project(page)
+    create_item(page, "Filtered ticket")
+    page.get_by_label("Filter priority").select_option("4")
+    playwright.expect(page.locator("#content")).not_to_contain_text("Filtered ticket")
+    page.get_by_role("button", name="Clear filters", exact=True).click()
+    playwright.expect(page.locator("#content")).to_contain_text("Filtered ticket")
+    page.get_by_label("Filter work type").select_option("BUG")
+    playwright.expect(page.locator("#content")).not_to_contain_text("Filtered ticket")
+    page.get_by_role("button", name="Work Items", exact=True).click()
+    playwright.expect(page.locator(".item-list").first).to_be_visible()
+    page.get_by_label("Filter priority").select_option("4")
+    playwright.expect(page.locator("#content")).not_to_contain_text("Filtered ticket")
+
+
+def test_scope_search_beyond_first_pages(page, server):
+    with httpx.Client(base_url=server[0], trust_env=False, headers={"Authorization": "Bearer " + server[1]}) as client:
+        for number in range(52):
+            response = client.post(
+                "/accs/v1/workbench/workspaces", json={"command_id": identity(), "name": "Scope " + str(number)}
+            )
+            assert response.status_code == 201
+            workspace = response.json()["id"]
+        for number in range(202):
+            response = client.post(
+                "/accs/v1/workbench/projects",
+                json={
+                    "command_id": identity(),
+                    "workspace_id": workspace,
+                    "name": "Project " + str(number),
+                    "key": "P" + str(number),
+                },
+            )
+            assert response.status_code == 201
+    page.get_by_label("Search workspaces").fill("Scope 51")
+    page.get_by_role("button", name="Find workspaces", exact=True).click()
+    playwright.expect(page.locator("#workspace option").filter(has_text="Scope 51")).to_have_count(1)
+    page.locator("#workspace").select_option(label="Scope 51")
+    page.get_by_label("Search projects").fill("Project 201")
+    page.get_by_role("button", name="Find projects", exact=True).click()
+    playwright.expect(page.locator("#project option").filter(has_text="Project 201")).to_have_count(1)
+    page.locator("#project").select_option(label="Project 201")
+    playwright.expect(page.locator("#project-context")).to_contain_text("Project 201")

@@ -14,12 +14,12 @@ from local_ai_router.schema import Request
 from local_ai_router.workbench.policy import CAPABILITIES, Principal
 from local_ai_router.workbench.runtime import WorkbenchRuntime
 from local_ai_router.workbench.schema import ActorType
-from local_ai_router.workbench.store import identity
+from local_ai_router.workbench.store import identity, now
 
 HUMAN = Principal("demo-fixture-operator", ActorType.HUMAN, CAPABILITIES, frozenset({"*"}), True)
 
 
-async def demo(home, root, verify_clients=None):
+async def demo(home, root, verify_clients=None, *, feature=False):
     root.mkdir()
     options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     subprocess.run(["git", "init", "--quiet", str(root)], check=True, capture_output=True, **options)
@@ -118,7 +118,7 @@ async def demo(home, root, verify_clients=None):
         ids = [imported["items"]["b0_" + key] for key in ("greeting", "tests", "docs")]
         blocked = runtime.service.store.get("work_item", ws.id, ids[1])
         assert runtime.service.readiness(blocked) == ("BLOCKED", "DEPENDENCY_NOT_DONE")
-        runtime.agents.configure(
+        agent = runtime.agents.configure(
             {
                 "command_id": identity(),
                 "name": "Fixture engine",
@@ -126,10 +126,59 @@ async def demo(home, root, verify_clients=None):
                 "repository_permissions": [reference],
             },
             HUMAN,
-        )
+        ).body
+        batch = None
+        if feature:
+            fields = {
+                "workspace_id": ws.id,
+                "project_id": project["id"],
+                "import_id": staged["id"],
+                "item_ids": ids,
+                "contract_revisions": {key: 1 for key in ids},
+                "agents": {key: agent["id"] for key in ids},
+                "budget": "0.30",
+                "expires_at": now() + 120000,
+            }
+            reviewed = runtime.delivery.preview(fields, HUMAN)
+            batch = runtime.delivery.confirm(
+                {
+                    "workspace_id": ws.id,
+                    "command_id": identity(),
+                    "preview": reviewed["preview"],
+                    "selection_hash": reviewed["selection_hash"],
+                },
+                HUMAN,
+            ).body
         await runtime.start(dispatcher=True)
         attempts = []
         for item_id in ids:
+            if feature:
+                for _ in range(400):
+                    current = runtime.service.store.get("work_item", ws.id, item_id)
+                    if current.status in {"REVIEW", "FAILED", "BLOCKED"}:
+                        break
+                    await asyncio.sleep(0.05)
+                assert current.status == "REVIEW", current.status
+                attempt = runtime.service.store.db.execute(
+                    "SELECT id FROM wb_attempts WHERE item_id=? ORDER BY ordinal DESC LIMIT 1", (item_id,)
+                ).fetchone()[0]
+                evidence, data = runtime.service.evidence(current)
+                assert data["checks"] and all(c["passed"] for c in data["checks"])
+                runtime.service.item_command(
+                    ws.id,
+                    item_id,
+                    {
+                        "command_id": identity(),
+                        "expected_revision": current.revision,
+                        "command": "approve_completion",
+                        "contract_revision": current.contract_revision,
+                        "evidence_hash": evidence["evidence_hash"],
+                        "reason": "Fixture operator inspected independent host checks",
+                    },
+                    HUMAN,
+                )
+                attempts.append(attempt)
+                continue
             item = runtime.service.store.get("work_item", ws.id, item_id)
             runtime.service.item_command(
                 ws.id,
@@ -195,6 +244,9 @@ async def demo(home, root, verify_clients=None):
             )
             attempts.append(attempt)
         keys = [runtime.service.store.get("work_item", ws.id, i).display_key for i in ids]
+        if feature:
+            runtime.delivery.tick()
+            assert runtime.delivery.get(ws.id, batch["id"], HUMAN)["state"] == "COMPLETED"
         if verify_clients:
             await verify_clients(runtime, "completed")
         assert keys == ["DEMO-1", "DEMO-2", "DEMO-3"]
@@ -229,6 +281,7 @@ async def demo(home, root, verify_clients=None):
             "checks": "executed unittest",
             "restart": "keys/revisions/receipts preserved",
             "paid_inference": False,
+            "delivery": "human-approved batch with separate completion review" if feature else "individual grants",
             "files": [p.name for p in root.iterdir() if p.is_file()],
         }
     finally:
@@ -239,10 +292,13 @@ async def demo(home, root, verify_clients=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--parent", type=Path, help="Optional directory for disposable fixture")
+    parser.add_argument(
+        "--feature", action="store_true", help="Demonstrate approved batch coordination and separate completion review"
+    )
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="accension-workbench-demo-", dir=args.parent) as directory:
         base = Path(directory)
-        print(json.dumps(asyncio.run(demo(base / "home", base / "repo")), indent=2))
+        print(json.dumps(asyncio.run(demo(base / "home", base / "repo", feature=args.feature)), indent=2))
 
 
 if __name__ == "__main__":

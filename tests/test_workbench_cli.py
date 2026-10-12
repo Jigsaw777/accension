@@ -46,6 +46,29 @@ async def test_unknown_agent_status_is_a_domain_error(context):
         await run(engine, "agent", "status", identity(), "--workspace", ws)
 
 
+async def test_cli_compact_reads_and_direct_agent_lookup(context, monkeypatch):
+    from test_workbench_agents import HUMAN, definition
+
+    engine, app = context
+    runtime = app.state.workbench
+    ws = runtime.service.seed_defaults()
+    agent = runtime.agents.configure(definition(ws), HUMAN).body
+
+    def forbidden(*_):
+        pytest.fail("CLI created an execution owner")
+
+    monkeypatch.setattr("local_ai_router.cli.Engine", forbidden)
+    assert (await run(engine, "agent", "status", agent["id"], "--workspace", ws.id))["id"] == agent["id"]
+    assert (await run(engine, "agent", "list", "--workspace", ws.id, "--query", "missing"))["items"] == []
+    board = await run(engine, "workbench", "board", "--workspace", ws.id)
+    assert board["workspace_id"] == ws.id and all(not column["items"] for column in board["columns"])
+    models = await run(engine, "workbench", "models", "--workspace", ws.id, "--purpose", "executor")
+    assert models["inference"] is False
+    assert (await run(engine, "agent", "activity", agent["id"], "--workspace", ws.id))["items"]
+    assert (await run(engine, "workbench", "operations", "--workspace", ws.id))["items"] == []
+    assert engine.store.costs()["calls"] == 0
+
+
 async def test_cli_json_parser_and_idempotency(context, tmp_path):
     engine, _ = context
     ws = await run(engine, "workspace", "create", "--name", "Test", "--json")

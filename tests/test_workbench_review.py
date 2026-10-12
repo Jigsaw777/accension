@@ -52,6 +52,38 @@ async def test_no_reviewer_does_not_satisfy_ai_review(execution):
     )
 
 
+async def test_rejected_ai_review_is_observed_and_counted(execution, monkeypatch):
+    import json
+
+    from local_ai_router.schema import Generation
+    from local_ai_router.workbench.metrics import agent_metrics
+    from local_ai_router.workbench.store import now
+
+    runtime, ws, _, agent, _ = execution
+    policy(runtime, ws, "AI_REVIEW")
+    model = runtime.engine.settings.models[0]
+    runtime.engine.settings.models.append(model.model_copy(update={"id": "independent-reviewer"}))
+    original = runtime.engine.providers.generate
+
+    async def generate(*args, **kwargs):
+        if args[2] == "reviewer":
+            return Generation(text=json.dumps({"accepted": False, "findings": ["Fixture review rejected"]}))
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(runtime.engine.providers, "generate", generate)
+    attempt = queue(execution, item(execution, review_policy="AI_REVIEW"))
+    await runtime.scheduler.work(attempt, 1)
+    rows = runtime.engine.store.db.execute(
+        "SELECT status FROM wb_verifications WHERE attempt_id=? AND kind='AI_REVIEW'", (attempt,)
+    ).fetchall()
+    assert rows and all(row[0] == "REJECTED" for row in rows)
+    assert (
+        runtime.service.store.get("work_item", ws.id, runtime.execution.contract(attempt)[1].item_id).status != "DONE"
+    )
+    measured = agent_metrics(runtime, ws.id, agent["id"], HUMAN, start=now() - 60000, end=now() + 1000)
+    assert measured["totals"]["ai_rejected"] == len(rows) and measured["totals"]["ai_review_acceptance_rate"] == 0
+
+
 async def verified(execution):
     runtime = execution[0]
     attempt = queue(execution, item(execution))

@@ -1,0 +1,13 @@
+{
+  "workspace_id": "a20b7d2f-b4de-4b35-ae22-05dc21060542",
+  "project_id": "a20b7d2f-b4de-4b35-ae22-05dc21060543",
+  "requirement": "Specify greeting behavior",
+  "constraints": [
+    "Preserve independent tests"
+  ],
+  "budget": "0.10",
+  "model_selection": {
+    "mode": "pinned",
+    "primary_model_id": "configured-local-planner"
+  }
+}

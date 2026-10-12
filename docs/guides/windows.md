@@ -22,7 +22,7 @@ Stopping waits for the hub's cleanup marker, including open event-stream connect
 
 If a hub launched from a source checkout is already listening on port 8765, stop it with that checkout's `accs stop` first. A desktop launcher can reuse an already running hub, so opening a shortcut alone does not replace code served by an older process. After installing, reload the browser; check that Workbench has the Accension sidebar and green theme.
 
-An offline executable always contains the source snapshot from its build. It cannot obtain future code without downloading another package. The automation updates branch downloads after successful builds; it does not silently replace an installed application or interrupt work. Package version 1.0.0 can have multiple development builds: use `built_at`, `source_commit` and `ui_assets` in the accompanying manifest to distinguish them. Back up the profile before upgrades that migrate the database; downgrading schema version 7 requires backup restoration.
+An offline executable always contains the source snapshot from its build. It cannot obtain future code without downloading another package. The automation updates branch downloads after successful builds; it does not silently replace an installed application or interrupt work. Package version 1.1.0 can have multiple development builds: use `built_at`, `source_commit` and `ui_assets` in the accompanying manifest to distinguish them. Back up the profile before upgrades that migrate the database; downgrading schema version 9 requires backup restoration.
 
 ## Latest development build
 
@@ -30,4 +30,4 @@ An offline executable always contains the source snapshot from its build. It can
 
 ## Build and verify from source
 
-Use [installer build instructions](../installer/windows/README.md). The builder verifies the official runtime archive, stages a fresh wheel, compares all installed assets with current source, generates the Windows icon from the shared SVG, and writes SHA-256/dependency/source manifests. The real installer smoke test checks both themes, served asset hashes, shortcuts, zero inference, upgrade and uninstall in an isolated profile.
+Use [installer build instructions](../../installer/windows/README.md). The builder verifies the official runtime archive, stages a fresh wheel, compares all installed assets with current source, generates the Windows icon from the shared SVG, and writes SHA-256/dependency/source manifests. The real installer smoke test checks both themes, served asset hashes, shortcuts, zero inference, upgrade and uninstall in an isolated profile.

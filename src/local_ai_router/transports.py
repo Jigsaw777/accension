@@ -12,7 +12,7 @@ from .schema import Generation, Usage
 
 class HTTPTransport:
     async def generate(self, context, model, messages, maximum, schema=None, **kwargs):
-        from .providers import usage_from
+        from .providers import reported_usage_fields, usage_from
 
         path, payload = self.payload(model, messages, maximum, schema, context)
         from .probes import evidence, prepare, stream_probe
@@ -33,7 +33,14 @@ class HTTPTransport:
         text = "" if probe == "embeddings" else self.text(data)
         if probe:
             data["probe_evidence"] = evidence(protocol, probe, data, text, color)
-        return Generation(text=text, usage=usage_from(data), raw=data)
+        fields = reported_usage_fields(data)
+        return Generation(
+            text=text,
+            usage=usage_from(data),
+            raw=data,
+            usage_source="provider_reported" if fields else "unknown",
+            reported_usage_fields=fields,
+        )
 
     def base(self, context):
         base = context.provider.endpoint.rstrip("/")
@@ -193,6 +200,9 @@ class BedrockTransport:
 
             data = await asyncio.to_thread(invoke)
         u = data.get("usage", {})
+        from .providers import reported_usage_fields
+
+        fields = reported_usage_fields(data)
         return Generation(
             text="".join(
                 block.get("text", "") for block in data.get("output", {}).get("message", {}).get("content", [])
@@ -206,6 +216,8 @@ class BedrockTransport:
                 cache_write_tokens=u.get("cacheWriteInputTokens", 0),
             ),
             raw=data,
+            usage_source="provider_reported" if fields else "unknown",
+            reported_usage_fields=fields,
         )
 
 

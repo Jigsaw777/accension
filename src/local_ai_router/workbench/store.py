@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from decimal import Decimal
+from functools import lru_cache
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -82,29 +83,31 @@ class WorkbenchStore:
             data["budget_limit_microusd"] = budget_microusd(data.pop("budget_limit"))
         return data
 
-    def _references(self, kind, entity, *, writable: bool):
+    def _references(self, kind, entity, *, writable: bool, lookup=None):
         if kind == "workspace":
             return
-        ws = self.db.execute("SELECT archived_at FROM wb_workspaces WHERE id=?", (entity.workspace_id,)).fetchone()
+        if lookup is None:
+
+            def lookup(sql, params):
+                return self.db.execute(sql, params).fetchone()
+
+        ws = lookup("SELECT archived_at FROM wb_workspaces WHERE id=?", (entity.workspace_id,))
         if ws is None:
             raise WorkbenchError("INVALID_REFERENCE", "Workspace does not exist")
         if writable and ws[0] is not None:
             raise WorkbenchError("ARCHIVED", "Workspace is archived")
         if kind in {"prd", "work_item", "plan_import"}:
-            project = self.db.execute(
+            project = lookup(
                 "SELECT key,archived_at FROM wb_projects WHERE workspace_id=? AND id=?",
                 (entity.workspace_id, entity.project_id),
-            ).fetchone()
+            )
             if project is None:
                 raise WorkbenchError("INVALID_REFERENCE", "Project does not belong to workspace")
             if writable and project[1] is not None:
                 raise WorkbenchError("ARCHIVED", "Project is archived")
-        if (
-            kind == "plan_import"
-            and not self.db.execute(
-                "SELECT 1 FROM wb_prds WHERE workspace_id=? AND project_id=? AND id=?",
-                (entity.workspace_id, entity.project_id, entity.prd_id),
-            ).fetchone()
+        if kind == "plan_import" and not lookup(
+            "SELECT 1 FROM wb_prds WHERE workspace_id=? AND project_id=? AND id=?",
+            (entity.workspace_id, entity.project_id, entity.prd_id),
         ):
             raise WorkbenchError("INVALID_REFERENCE", "Preview PRD does not belong to project")
         if kind == "work_item":
@@ -112,12 +115,9 @@ class WorkbenchStore:
                 raise WorkbenchError("CORRUPT_DATA", "Item display key does not match project", 500)
             for field, table in (("prd_id", "wb_prds"), ("parent_item_id", "wb_work_items")):
                 value = getattr(entity, field)
-                if (
-                    value
-                    and not self.db.execute(
-                        f"SELECT 1 FROM {table} WHERE workspace_id=? AND project_id=? AND id=?",
-                        (entity.workspace_id, entity.project_id, value),
-                    ).fetchone()
+                if value and not lookup(
+                    f"SELECT 1 FROM {table} WHERE workspace_id=? AND project_id=? AND id=?",
+                    (entity.workspace_id, entity.project_id, value),
                 ):
                     raise WorkbenchError("INVALID_REFERENCE", f"{field} does not belong to project")
             if writable:
@@ -129,11 +129,8 @@ class WorkbenchStore:
                 )
                 parents[entity.id] = entity.parent_item_id
                 validate_parents(parents)
-        if (
-            kind == "comment"
-            and not self.db.execute(
-                "SELECT 1 FROM wb_work_items WHERE workspace_id=? AND id=?", (entity.workspace_id, entity.item_id)
-            ).fetchone()
+        if kind == "comment" and not lookup(
+            "SELECT 1 FROM wb_work_items WHERE workspace_id=? AND id=?", (entity.workspace_id, entity.item_id)
         ):
             raise WorkbenchError("INVALID_REFERENCE", "Comment item does not belong to workspace")
 
@@ -291,6 +288,12 @@ class WorkbenchStore:
                 f"SELECT * FROM {table} WHERE {' AND '.join(clauses)} ORDER BY {order} LIMIT ?", (*params, limit)
             ).fetchall()
             entities = [self._decode(model, row) for row in rows]
+
+            @lru_cache(maxsize=600)
+            def lookup(sql, params):
+                # Reuse references only within this locked, bounded page read.
+                return self.db.execute(sql, params).fetchone()
+
             for entity in entities:
-                self._references(kind, entity, writable=False)
+                self._references(kind, entity, writable=False, lookup=lookup)
             return entities

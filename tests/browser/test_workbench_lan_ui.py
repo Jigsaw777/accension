@@ -183,7 +183,7 @@ def test_browser_pair_host_approval_readonly_client(browsers, lan_server, tmp_pa
         screenshot = tmp_path / f"workbench-remote-{theme}-mobile.png"
         page.screenshot(path=str(screenshot), full_page=True)
         print(f"UI screenshot: {screenshot}")
-    page.locator("#content button").click()
+    page.get_by_role("button", name="LAN-1 · Review on phone", exact=False).click()
     playwright.expect(page.get_by_role("heading", name="Completion evidence")).to_be_visible()
     assert page.get_by_role("button", name="approve_completion", exact=True).count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -195,7 +195,7 @@ def test_browser_pair_host_approval_readonly_client(browsers, lan_server, tmp_pa
 def test_browser_mobile_review_scope(browsers, lan_server):
     pair_browser(browsers, lan_server, "workspace.read,artifact.read,review.approve")
     _, page, _ = browsers
-    page.locator("#content button").focus()
+    page.get_by_role("button", name="LAN-1 · Review on phone", exact=False).focus()
     page.keyboard.press("Enter")
     playwright.expect(page.locator("#detail")).to_contain_text("REVIEW")
     playwright.expect(page.get_by_role("button", name="approve_completion", exact=True)).to_be_visible()
@@ -224,19 +224,26 @@ def test_browser_board_pagination(browsers, lan_server):
             )
             assert response.status_code == 201
     page.get_by_role("button", name="Refresh", exact=True).click()
-    playwright.expect(page.get_by_role("button", name="Next page", exact=True)).to_be_visible()
-    first = page.locator("#content button").first.inner_text()
-    page.get_by_role("button", name="Next page", exact=True).click()
-    playwright.expect(page.get_by_role("button", name="First page", exact=True)).to_be_visible()
-    assert page.locator("#content button").first.inner_text() != first
-    page.get_by_role("button", name="First page", exact=True).click()
-    playwright.expect(page.locator("#content button").first).to_have_text(first)
+    more = page.get_by_role("button", name="Load more BACKLOG", exact=True)
+    cards = page.get_by_role("button", name="Page item", exact=False)
+    playwright.expect(more).to_be_visible()
+    playwright.expect(cards).to_have_count(20)
+    first = cards.first.inner_text()
+    more.click()
+    playwright.expect(cards).to_have_count(40)
+    more.click()
+    playwright.expect(cards).to_have_count(51)
+    playwright.expect(more).to_be_hidden()
+    assert len(set(cards.all_text_contents())) == 51
+    page.get_by_role("button", name="Refresh", exact=True).click()
+    playwright.expect(cards).to_have_count(20)
+    playwright.expect(cards.first).to_have_text(first)
 
 
 def test_browser_revocation_and_offline_indicators(browsers, lan_server):
     pair_browser(browsers, lan_server, "workspace.read,artifact.read,review.approve")
     host, page, context = browsers
-    page.locator("#content button").click()
+    page.get_by_role("button", name="LAN-1 · Review on phone", exact=False).click()
     playwright.expect(page.get_by_role("button", name="approve_completion", exact=True)).to_be_visible()
     context.set_offline(True)
     playwright.expect(page.locator("#connection")).to_contain_text("Offline")

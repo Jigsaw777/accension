@@ -21,7 +21,7 @@ class EngineAgentAdapter:
         self.runtime, self.service, self.engine = runtime, runtime.service, runtime.engine
         self.store = self.service.store
 
-    def request(self, workspace_id, item_id, request, principal):
+    def request(self, workspace_id, item_id, request, principal, *, _delivery_batch=None):
         body = BasicCommand.model_validate(request)
         if body.command != "request_execution":
             raise WorkbenchError("INVALID_INPUT", "Expected request_execution", 422)
@@ -37,6 +37,14 @@ class EngineAgentAdapter:
                 raise WorkbenchError("AGENT_INELIGIBLE", "Assigned worker is no longer eligible", 422)
             preflight = self.runtime.agents.execution_preflight(workspace_id, item_id, principal)
             workspace = self.store.get("workspace", workspace_id, workspace_id)
+            delivery_grant = None
+            if _delivery_batch is not None:
+                if not self.store.db.in_transaction or principal.actor_type != "SYSTEM":
+                    raise WorkbenchError("INVALID_GRANT", "Delivery intent requires the coordinator transaction", 403)
+                _, _, delivery_grant, approved_agents = self.runtime.delivery.authorization(_delivery_batch, item_id)
+                definition = self.runtime.agents.definition(item.assigned_agent_id)
+                if approved_agents.get(definition.id) != definition.revision:
+                    raise WorkbenchError("AGENT_INELIGIBLE", "Delivery agent revision changed", 422)
             grant = self.store.db.execute(
                 "SELECT * FROM wb_execution_grants WHERE workspace_id=? AND item_id=? AND revoked_at IS NULL AND consumed_attempt_id IS NULL AND expires_at>? AND contract_revision=? AND contract_hash=? AND policy_revision_hash=? ORDER BY expires_at DESC LIMIT 1",
                 (
@@ -48,7 +56,7 @@ class EngineAgentAdapter:
                     preflight["policy_revision_hash"],
                 ),
             ).fetchone()
-            if workspace.execution_policy.require_execution_approval and grant is None:
+            if workspace.execution_policy.require_execution_approval and grant is None and delivery_grant is None:
                 waiting = self.service.changed_item(
                     item,
                     {"status": "WAITING_FOR_HUMAN", "reason_code": "EXECUTION_APPROVAL_REQUIRED"},
@@ -98,6 +106,7 @@ class EngineAgentAdapter:
                 assignment_id=assignment["id"],
                 agent_definition_id=definition.id,
                 agent_definition_revision=definition.revision,
+                agent_name=definition.name,
                 policy_revision_hash=preflight["policy_revision_hash"],
                 repository_ref=project.repository_ref,
                 title=item.title,
@@ -108,15 +117,17 @@ class EngineAgentAdapter:
                 quality=policy.quality,
                 review_policy=policy.review,
                 model_roles=definition.supported_model_roles,
+                model_bindings=definition.model_bindings.model_copy(deep=True),
                 tools=definition.tools,
                 skill_hashes={s.id: s.content_hash for s in skills.skills},
                 grant_id=grant["id"] if grant else None,
                 risk=item.risk,
                 complexity=item.complexity,
                 dependency_evidence=dependencies,
+                batch_id=_delivery_batch,
             )
             self.store.db.execute(
-                "INSERT INTO wb_attempts(id,workspace_id,item_id,ordinal,assignment_id,contract_revision,contract_hash,contract_json,state,request_id,fence) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,1)",
+                "INSERT INTO wb_attempts(id,workspace_id,item_id,ordinal,assignment_id,contract_revision,contract_hash,contract_json,state,request_id,fence,queued_at) VALUES(?,?,?,?,?,?,?,?,'QUEUED',?,1,?)",
                 (
                     attempt_id,
                     workspace_id,
@@ -127,12 +138,32 @@ class EngineAgentAdapter:
                     payload_hash(contract.model_dump(mode="json")),
                     contract.model_dump_json(),
                     request_id,
+                    now(),
                 ),
             )
             self.store.db.execute(
                 "INSERT INTO wb_budget_reservations VALUES(?,?,?,'RESERVED',?,NULL)",
                 (attempt_id, item.id, remaining, now()),
             )
+            if _delivery_batch is not None:
+                batch = self.store.db.execute(
+                    "SELECT max_cost_microusd FROM wb_delivery_batches WHERE id=?", (_delivery_batch,)
+                ).fetchone()
+                charged = self.store.db.execute(
+                    "SELECT COALESCE(SUM(CASE WHEN state='settled' THEN settled_microusd ELSE reserved_microusd END),0) FROM wb_delivery_reservations WHERE batch_id=?",
+                    (_delivery_batch,),
+                ).fetchone()[0]
+                if charged + remaining > batch[0]:
+                    raise WorkbenchError("BATCH_BUDGET_EXHAUSTED", "Delivery reservation exceeds approved cap", 422)
+                self.store.db.execute("UPDATE wb_attempts SET batch_id=? WHERE id=?", (_delivery_batch, attempt_id))
+                self.store.db.execute(
+                    "INSERT INTO wb_delivery_reservations VALUES(?,?,?,NULL,'reserved')",
+                    (attempt_id, _delivery_batch, remaining),
+                )
+                self.store.db.execute(
+                    "UPDATE wb_delivery_members SET member_state='queued',last_attempt_id=? WHERE batch_id=? AND item_id=?",
+                    (attempt_id, _delivery_batch, item_id),
+                )
             if grant:
                 self.store.db.execute(
                     "UPDATE wb_execution_grants SET consumed_attempt_id=? WHERE id=? AND consumed_attempt_id IS NULL",
@@ -141,6 +172,8 @@ class EngineAgentAdapter:
             changed = self.service.changed_item(item, {"active_attempt_id": attempt_id}, principal, "execution_queued")
             return CommandResult(202, {"attempt_id": attempt_id, "item": changed.model_dump(mode="json")})
 
+        if _delivery_batch is not None:
+            return apply()
         return self.service.command(
             principal,
             workspace_id,
@@ -158,7 +191,7 @@ class EngineAgentAdapter:
         try:
             contract = WorkExecutionContract.model_validate_json(row["contract_json"])
             if (
-                payload_hash(contract.model_dump(mode="json")) != row["contract_hash"]
+                payload_hash(json.loads(row["contract_json"])) != row["contract_hash"]
                 or contract.attempt_id != row["id"]
             ):
                 raise ValueError()
@@ -290,6 +323,11 @@ class EngineAgentAdapter:
                 ).fetchone()
                 if grant is None or grant[0] is not None or grant[1] != attempt_id:
                     raise ExecutionAborted("Execution grant revoked")
+            if contract.batch_id:
+                try:
+                    self.runtime.delivery.authorization(contract.batch_id, contract.item_id, active_attempt=True)
+                except WorkbenchError as exc:
+                    raise ExecutionAborted("Delivery authorization changed") from exc
 
     async def bind(self, attempt_id, generation, fence):
         row, contract = self.contract(attempt_id)
@@ -358,6 +396,13 @@ class EngineAgentAdapter:
             contract.model_roles,
             tools=contract.tools,
             required_review=contract.review_policy == "AI_REVIEW",
+            model_bindings=contract.model_bindings.model_dump(mode="json"),
+            attempt_context={
+                "attempt_id": attempt_id,
+                "contract_hash": row["contract_hash"],
+                "expires_at": row["lease_until"] or now() + 30000,
+                "fence": fence,
+            },
         ):
             plan = await self.bind(attempt_id, generation, fence)
             self.guard(attempt_id, generation, fence)
@@ -381,6 +426,31 @@ class EngineAgentAdapter:
                 self.guard(attempt_id, generation, fence)
             row, contract = self.contract(attempt_id)
             item = self.store.get("work_item", contract.workspace_id, contract.item_id)
+            from .activity import append_activity
+
+            inserted = append_activity(
+                self.store,
+                source_key=f"signal:{attempt_id}:{signal.event_id}",
+                workspace_id=contract.workspace_id,
+                project_id=contract.project_id,
+                item_id=contract.item_id,
+                agent_definition_id=contract.agent_definition_id,
+                attempt_id=attempt_id,
+                occurred_at=now(),
+                actor_type=ActorType.SYSTEM,
+                actor_id="engine",
+                event_type="engine_" + signal.kind,
+                metadata={
+                    "stage": signal.kind,
+                    "model_id": signal.model_id,
+                    "agent_name": self.store.db.execute(
+                        "SELECT name FROM wb_agent_definitions WHERE id=?", (contract.agent_definition_id,)
+                    ).fetchone()[0],
+                    "agent_revision": contract.agent_definition_revision,
+                },
+            )
+            if not inserted:
+                return
             state = {"execution_start": "RUNNING", "worker_start": "RUNNING", "validation_start": "VERIFYING"}.get(
                 signal.kind
             )
@@ -425,7 +495,11 @@ class EngineAgentAdapter:
                         contract.workspace_id,
                         item.id,
                         attempt_id,
-                        "ACCEPTED" if signal.status == "accepted" else "MISSING",
+                        "ACCEPTED"
+                        if signal.status == "accepted"
+                        else "REJECTED"
+                        if signal.status == "rejected"
+                        else "MISSING",
                         json.dumps(evidence),
                         payload_hash(evidence["artifacts"]),
                         payload_hash(evidence),
@@ -526,6 +600,9 @@ class EngineAgentAdapter:
                 item, {"status": "REVIEW", "active_attempt_id": None}, principal, "verification_ready"
             )
             self.service.review_gate(self.store.get("work_item", contract.workspace_id, item.id), principal)
+            from .metrics import reconcile_attempt
+
+            reconcile_attempt(self.runtime, contract.attempt_id)
 
     def terminal_failure(self, attempt_id, generation, fence):
         from ..receipts import get
@@ -581,9 +658,15 @@ class EngineAgentAdapter:
             self.service.changed_item(
                 item, {"status": status, "active_attempt_id": None, "reason_code": None}, SYSTEM, "cleanup_acknowledged"
             )
+            from .metrics import reconcile_attempt
+
+            reconcile_attempt(self.runtime, attempt_id)
             return True
 
     def reconcile_terminal(self, attempt_id):
+        row = self.store.db.execute("SELECT error_code FROM wb_attempts WHERE id=?", (attempt_id,)).fetchone()
+        if row and row[0] == "ConnectorUncertain":
+            return False
         from .scheduler import SYSTEM
 
         row, contract = self.contract(attempt_id)
@@ -959,6 +1042,7 @@ class EngineAgentAdapter:
                         contract.model_roles,
                         tools=contract.tools,
                         required_review=contract.review_policy == "AI_REVIEW",
+                        model_bindings=contract.model_bindings.model_dump(mode="json"),
                     ),
                     observer_scope(lambda signal: self.observe(attempt_id, generation, fence, signal)),
                 ):

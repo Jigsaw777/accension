@@ -65,11 +65,23 @@
 .workbench .board-toolbar input { width: min(280px, 100%); margin: 0; }
 .workbench .record { border-bottom: 1px solid var(--line); padding: 12px 0; overflow-wrap: anywhere; }
 .workbench .mobile-state { display: none; }
+.workbench .item-list { display: block; overflow: visible; min-height: 0; }
+.workbench .item-list .column { min-height: 0; margin: 10px 0; }
+.workbench .filters input, .workbench .board-toolbar select { max-width: 100%; }
 .workbench pre { max-height: 400px; }
 .workbench #detail { scroll-margin-top: 140px; }
 .workbench #detail:not(:empty) { border-top: 2px solid var(--line); margin-top: 24px; padding-top: 18px; }
+.workbench #detail { overflow-wrap: anywhere; }
 .workbench summary { padding: 6px; }
+.workbench fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; padding: 12px; }
+.workbench legend { color: var(--ink); font-weight: 600; }
+.workbench fieldset input, .workbench fieldset textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+.workbench fieldset button, .workbench legend { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.workbench svg { display: block; width: 100%; max-width: 600px; height: auto; }
+.workbench table { width: 100%; table-layout: fixed; overflow-wrap: anywhere; }
+.workbench th, .workbench td { padding: 6px; text-align: left; }
 @media (max-width: 850px) {
+  .workbench #navigation { display: flex; flex-wrap: wrap; overflow: visible; }
   .workbench #navigation button { width: auto; white-space: nowrap; flex-shrink: 0; }
   .workbench header { position: static; }
   .workbench .exceptional { grid-template-columns: repeat(2, minmax(0, 1fr)); }

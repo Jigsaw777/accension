@@ -74,6 +74,37 @@ async def test_prd_generation_uses_existing_provider_path(planning, monkeypatch)
     assert not planner.engine.store.db.execute("SELECT 1 FROM runs").fetchone()
 
 
+async def test_pinned_planner_actual_call_and_quote_inventory(planning, monkeypatch):
+    from local_ai_router.schema import ModelDescriptor
+
+    planner, workspace, project = planning
+    planner.engine.settings.models = [
+        ModelDescriptor(id=name, provider="mock", deployment_name=name) for name in ("first", "chosen")
+    ]
+    planner.engine.settings.routing.allow_below_slo = True
+    planner.engine.settings.routing.planner_model_candidates = []
+    body = request(workspace, project, model_selection={"mode": "pinned", "primary_model_id": "chosen"})
+    calls = []
+
+    async def capture(model, *args, **kwargs):
+        calls.append(model.id)
+        return Generation(text=json.dumps(SPEC))
+
+    monkeypatch.setattr(planner.engine.providers, "_generate_checked", capture)
+    quote = planner.quote(body, HUMAN)
+    assert quote["eligible_models"] == ["chosen"]
+    result = planner.enqueue({**body, "command_id": identity(), "quote": quote["quote"]}, HUMAN)
+    await drain(planner)
+    assert calls == ["chosen"] and planner.get(workspace.id, result.body["id"], HUMAN)["state"] == "COMPLETED"
+    changed = {**body, "model_selection": {"mode": "pinned", "primary_model_id": "first"}}
+    with pytest.raises(WorkbenchError):
+        planner.enqueue({**changed, "command_id": identity(), "quote": quote["quote"]}, HUMAN)
+    planner.engine.settings.models[0].enabled = False
+    with pytest.raises(WorkbenchError):
+        planner.enqueue({**body, "command_id": identity(), "quote": quote["quote"]}, HUMAN)
+    assert not planner.store.db.execute("SELECT 1 FROM wb_attempts").fetchone()
+
+
 async def test_duplicate_generation_one_operation(planning, monkeypatch):
     planner, workspace, project = planning
     entered, release = asyncio.Event(), asyncio.Event()

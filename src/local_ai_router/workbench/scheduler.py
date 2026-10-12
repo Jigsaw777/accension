@@ -94,7 +94,15 @@ class Scheduler:
                 item = self.store.get("work_item", contract.workspace_id, contract.item_id)
                 if self.paused(contract.workspace_id, contract.project_id):
                     continue
+                if contract.batch_id:
+                    batch = self.store.db.execute(
+                        "SELECT state FROM wb_delivery_batches WHERE id=?", (contract.batch_id,)
+                    ).fetchone()
+                    if batch and batch[0] == "PAUSED":
+                        continue
                 try:
+                    if contract.batch_id:
+                        self.runtime.delivery.authorization(contract.batch_id, contract.item_id)
                     ready, reason = self.runtime.service.readiness(item)
                     if ready != "READY":
                         raise WorkbenchError(reason or "NOT_READY", "Execution dependency or budget changed")
@@ -248,13 +256,22 @@ class Scheduler:
                     SYSTEM,
                     "cleanup_acknowledged",
                 )
+                from .metrics import reconcile_attempt
+
+                reconcile_attempt(self.runtime, attempt["id"])
 
     async def work(self, attempt_id, fence):
         try:
             await self.runtime.execution.execute(attempt_id, self.generation, fence)
         except BaseException as exc:
             self.error = type(exc).__name__
-            cleaned = self.runtime.execution.terminal_failure(attempt_id, self.generation, fence)
+            from .connectors import ConnectorUncertain
+
+            cleaned = (
+                False
+                if isinstance(exc, ConnectorUncertain)
+                else self.runtime.execution.terminal_failure(attempt_id, self.generation, fence)
+            )
             with self.store.router.transaction():
                 row, contract = self.runtime.execution.contract(attempt_id)
                 if row["owner_generation"] == self.generation and row["fence"] == fence:
@@ -279,6 +296,7 @@ class Scheduler:
                 self.heartbeat()
                 self.cancel_owned()
                 self.reconcile()
+                self.runtime.delivery.tick()
                 while (claim := self.claim()) is not None:
                     task = asyncio.create_task(self.work(*claim))
                     self.workers[claim[0]] = (task, claim[1])

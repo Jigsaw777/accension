@@ -73,4 +73,6 @@ def generate(messages, role):
     else:
         result = {"message": "Mock gateway response"}
     text = json.dumps(result)
-    return Generation(text=text, usage=Usage(input_tokens=len(raw) // 4, output_tokens=len(text) // 4))
+    return Generation(
+        text=text, usage=Usage(input_tokens=len(raw) // 4, output_tokens=len(text) // 4), usage_source="estimated"
+    )

@@ -3,7 +3,8 @@
   const $ = id => document.getElementById(id), base = "/workbench/api";
   let csrf = "", grants = {}, ws = "", online = false, pending = null, stream = null, sequence = 0, delay = 1000, timer = null;
   const commands = new Map(), revisions = new Map();
-  let pageCursor = "";
+  let pageCursor = "", boardGeneration = 0, screen = "board";
+  const viewStates = new Map();
   function el(tag, text) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; return node; }
   function status(value, text) { online = value; $("connection").textContent = text || (value ? "Connected · " + new Date().toLocaleTimeString() : "Offline · changes disabled"); document.querySelectorAll("[data-mutation]").forEach(node => node.disabled = !value); }
   function notice(text) { $("notice").textContent = text; }
@@ -25,18 +26,62 @@
     await request(base + "/work-items/" + id + "/commands" + query(), {...body, command_id: commands.get(key)});
     commands.delete(key); await board(); await detail(id);
   }
-  async function board(cursor = pageCursor) {
-    const data = await request(base + "/work-items" + query() + "&limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
-    pageCursor = cursor;
-    $("content").replaceChildren(el("h2", "Work items"));
-    for (const item of data.items) $("content").append(button(item.display_key + " · " + item.title + " · " + item.status, () => detail(item.id)));
-    if (pageCursor) $("content").append(button("First page", () => board("")));
-    if (data.has_more) $("content").append(button("Next page", () => board(data.next_cursor)));
+  function filters() { return viewStates.get(ws) || {query: "", project_id: ""}; }
+  async function board() {
+    screen = "board"; const scope = ws, generation = ++boardGeneration, fields = {...filters(), workspace_id: ws, limit: 20};
+    if (!fields.project_id) delete fields.project_id;
+    const data = await request(base + "/board?" + new URLSearchParams(fields));
+    if (scope !== ws || generation !== boardGeneration || screen !== "board") return;
+    const root = $("content"), form = el("form"), search = el("input"), label = el("label", "Search work items"), projects = el("select"), projectLabel = el("label", "Project");
+    search.name = "query"; search.maxLength = 200; search.value = fields.query; label.append(search);
+    projects.name = "project_id"; const all = el("option", "All projects"); all.value = ""; projects.append(all); projectLabel.append(projects);
+    form.append(label, projectLabel, el("button", "Apply filters"));
+    form.onsubmit = event => { event.preventDefault(); viewStates.set(ws, Object.fromEntries(new FormData(form))); board().catch(error => notice(error.message)); };
+    root.replaceChildren(el("h2", "Work item board"), form);
+    const choices = await request(base + "/projects" + query() + "&limit=50");
+    if (scope !== ws || generation !== boardGeneration || screen !== "board") return;
+    for (const project of choices.items) { const option = el("option", project.name); option.value = project.id; projects.append(option); } projects.value = fields.project_id || "";
+    for (const column of data.columns) {
+      const section = el("section"), cards = el("div"); section.append(el("h3", column.state + " · " + column.count), cards);
+      const draw = page => { for (const item of page.items) cards.append(button(item.display_key + " · " + item.title + " · " + (item.observed_stage || item.status), () => detail(item.id))); };
+      draw(column); let cursor = column.next_cursor;
+      const more = button("Load more " + column.state, async () => { const page = await request(base + "/board/columns/" + column.state + "?" + new URLSearchParams({...fields, cursor})); if (scope !== ws || generation !== boardGeneration) return; draw(page.columns[0]); cursor = page.columns[0].next_cursor; more.hidden = !cursor; });
+      more.hidden = !cursor; section.append(more); root.append(section);
+    }
+  }
+  async function timeline(kind, id, root, cursor) {
+    const scope = ws, data = await request(base + "/" + kind + "/" + id + "/activity" + query() + "&limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    if (scope !== ws || !root.isConnected) return;
+    if (!cursor) root.append(el("h3", "Activity"));
+    for (const entry of data.items) root.append(el("p", new Date(entry.occurred_at).toLocaleString() + " · " + entry.event_type + (entry.metadata.summary ? " · " + entry.metadata.summary : "")));
+    if (data.has_more) root.append(button("Older activity", async () => { await timeline(kind, id, root, data.next_cursor); }));
+  }
+  async function agents(cursor) {
+    screen = "agents"; ++boardGeneration; const scope = ws, data = await request(base + "/agents" + query() + "&limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    if (scope !== ws || screen !== "agents") return;
+    const root = $("content"); root.replaceChildren(el("h2", "Agents"));
+    for (const agent of data.items) root.append(button(agent.name + " · " + agent.state, async () => {
+      const profile = await request(base + "/agents/" + agent.id + query()); if (scope !== ws) return;
+      const panel = $("detail"); panel.replaceChildren(el("h2", agent.name), el("p", "Current work: " + profile.load + " / capacity " + profile.capacity), el("pre", JSON.stringify(profile.definition.model_bindings, null, 2)));
+      for (const connector of profile.connectors) panel.append(el("p", connector.name + " · " + connector.status));
+      const end = Date.now(), metrics = await request(base + "/agents/" + agent.id + "/metrics" + query() + "&from=" + (end - 30 * 86400000) + "&to=" + end); if (scope !== ws) return;
+      panel.append(el("h3", "Measured performance · last 30 days"), el("pre", JSON.stringify(metrics, null, 2))); await timeline("agents", agent.id, panel);
+    }));
+    if (cursor) root.append(button("First page", () => agents()));
+    if (data.has_more) root.append(button("Next agents", () => agents(data.next_cursor)));
+  }
+  async function models(cursor) {
+    screen = "models"; ++boardGeneration; const scope = ws, data = await request(base + "/model-options" + query() + "&purpose=executor&limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    if (scope !== ws || screen !== "models") return;
+    const root = $("content"); root.replaceChildren(el("h2", "Registered execution models"), el("p", "Eligibility follows this workspace's current privacy policy."));
+    for (const model of data.items) root.append(el("p", model.id + " · " + model.locality + " · " + (model.eligible ? "eligible" : model.reason_codes.join(", "))));
+    if (data.has_more) root.append(button("Next models", () => models(data.next_cursor)));
   }
   async function detail(id) {
     const item = await request(base + "/work-items/" + id + query());
     const root = $("detail"); root.replaceChildren(el("h2", item.title), el("p", item.display_key + " · " + item.status + " · revision " + item.revision));
     root.append(el("pre", JSON.stringify(item.spec, null, 2)));
+    await timeline("work-items", id, root);
     const allowed = new Set(item.allowed_actions || []), capabilities = new Set(grants[ws] || []);
     if (capabilities.has("work.write")) for (const action of ["ready", "cancel", "retry", "reopen"]) if (allowed.has(action)) root.append(button(action, () => command(id, {command: action, expected_revision: item.revision}), true));
     const attempts = await request(base + "/work-items/" + id + "/attempts" + query());
@@ -55,9 +100,9 @@
     if (allowed.has("request_execution") && capabilities.has("execution.request")) root.append(button("request_execution", () => command(id, {command: "request_execution", expected_revision: item.revision}), true));
   }
   async function snapshot() {
-    let page = await request(base + "/snapshots", {workspace_id: ws, filters: {kinds: ["work_item"]}, limit: 100});
+    const page = await request(base + "/board?" + new URLSearchParams({workspace_id: ws, limit: 1}));
     sequence = page.sequence; revisions.clear();
-    for (;;) { for (const item of page.items) revisions.set(item.payload.id, item.payload.revision); if (!page.next_cursor) break; page = await request(base + "/snapshots/" + page.snapshot_id + "?cursor=" + encodeURIComponent(page.next_cursor)); }
+    for (const column of page.columns) for (const item of column.items) revisions.set(item.id, item.revision);
   }
   function connect() {
     if (stream) stream.close();
@@ -70,7 +115,8 @@
       const previous = revisions.get(data.entity_id) || 0;
       if (data.entity_revision < previous) return reconnect(true);
       revisions.set(data.entity_id, data.entity_revision); sequence = data.sequence;
-      clearTimeout(timer); timer = setTimeout(() => board().catch(error => notice(error.message)), 150);
+      if (revisions.size > 1000) revisions.delete(revisions.keys().next().value);
+      clearTimeout(timer); if (screen === "board") timer = setTimeout(() => board().catch(error => notice(error.message)), 150);
     });
     stream.addEventListener("resync", event => { const code = JSON.parse(event.data).code; if (["UNAUTHENTICATED", "FORBIDDEN", "WORKSPACE_LOCAL_ONLY"].includes(code)) expired(); else reconnect(true); });
     stream.onerror = () => reconnect(false);
@@ -86,6 +132,8 @@
   $("pair-form").onsubmit = async event => { event.preventDefault(); try { pending = await request("/pairing/request", Object.fromEntries(new FormData(event.target))); $("phrase").textContent = "Compare with host: " + pending.verification_phrase; $("claim").hidden = false; event.target.elements.code.value = ""; notice("Waiting for host approval. Then connect."); } catch (error) { notice(error.message); } };
   $("claim").onclick = async () => { try { await request("/pairing/claim", {id: pending.id, challenge: pending.challenge, browser: true}); pending = null; $("phrase").textContent = ""; $("claim").hidden = true; await start(); } catch (error) { notice(error.message); } };
   $("refresh").onclick = () => start().catch(error => notice(error.message));
+  const nav = $("refresh").parentElement;
+  nav.append(button("Board", () => board()), button("Agents", () => agents()), button("Models", () => models()));
   $("logout").onclick = async () => { try { await request("/session/logout", {}); expired(); } catch (error) { notice(error.message); } };
   $("workspace").onchange = async () => { ws = $("workspace").value; pageCursor = ""; $("detail").replaceChildren(); await snapshot(); connect(); await board(); };
   window.addEventListener("offline", () => { if (stream) stream.close(); status(false); });

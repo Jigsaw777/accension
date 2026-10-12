@@ -2,7 +2,9 @@
 
 Workbench organizes projects, requirements and dependent work items. Model routing lives at `/ui`; the Workbench board lives at `/ui/workbench`. Both use the same Engine, configuration and database. The sidebar, logo, typography and light/dark theme belong to one Accension application.
 
-![Workbench board with synthetic project and ticket](screenshots/workbench-light-desktop.png)
+![Current Workbench board with synthetic project and reviewed Engine tasks](screenshots/feature-board-dark-desktop.png)
+
+Follow the [five-stage README walkthrough](../../README.md#workbench) and [feature delivery guide](feature-delivery.md) for PRD generation, model choices, execution approval, metrics and completion review. See the [current screenshots](screenshots/feature-showcase.md) for capture details.
 
 ## Open the application
 
@@ -62,4 +64,30 @@ Cancellation is complete only after worker cleanup and verified rollback. RECONC
 | Remote certificate/session denied | Correct exact certificate trust/origin or inspect host grants/revocation |
 | Hub cannot start | Run `accs doctor`; inspect `.router/service.log` in the active profile |
 
-See [Windows operations](windows.md), [architecture](architecture.md), [security](../SECURITY.md) and [CLI command help](../README.md#cli-commands-and-help). Workbench execution does not automatically commit, push or merge Git changes.
+See [Windows operations](windows.md), [architecture](architecture.md), [security](../../SECURITY.md) and [CLI command help](../../README.md#cli-commands-and-help). Workbench execution does not automatically commit, push or merge Git changes.
+
+## From idea to approved feature
+
+1. Select the workspace and project, open **PRDs → Generate PRD**, enter a rough idea and constraints, choose an eligible registered planner, and quote the planning budget. **Save** authorizes that quoted inference request. A generated document remains a draft. Reloading lets you reopen the existing operation without submitting another request.
+2. Review the draft's labeled problem, objectives, scope, requirement IDs and acceptance entries. Save edits, submit review, then approve the current revision. Choose **Decompose approved PRD** with explicit allowed paths and a new planning quote. This produces a task proposal.
+3. Review requirement coverage, artifacts, registered checks and dependencies. **Import selected tasks** creates BACKLOG items. Review each task's agent, model/fallback policy, paths and individual allowance before previewing feature execution. **Start approved feature** is a separate human approval over the exact displayed contracts and batch cap.
+4. Open the feature delivery entry under PRDs to inspect counts, held allowance, settled ledger debit and uncertain reservations. Pause stops new dispatch; running work can finish. Cancel requests cleanup. Changed contracts, policy, models, grants or expiry require fresh review. A dependent task waits for the required upstream DONE evidence.
+5. Review each ticket's host checks and artifact evidence before approving completion. An Engine or connector success is not DONE. Only after required member completion does the delivery become COMPLETED. Reopen feature progress after reload from the same PRD page.
+
+**Agents** separates configured definitions, live host instances and attempt history. Create or edit an agent locally, grant registered repositories/tools/skills, and choose automatic routing or a pinned primary plus numbered fallbacks for each role. Eligibility reasons come from current policy; heartbeat capacity does not prove that a remote worker is reachable. Connector observations show the last exchange and time, with unknown before the first observation.
+
+**Performance** uses frozen attempt identity and reported-call provenance. Success shows its denominator; duration shows sample count and nearest-rank p50/p95. Human-reviewed delivery, review acceptance, reported tokens, usage estimates, budget estimates and connector-reported costs have distinct meanings. Missing usage/prices remain unknown. Graphs have labeled units and a UTC data table. Planning calls remain separate from execution-agent measures.
+
+Board filters preserve workspace/project/search, agent/type/priority and mobile state during refresh. Cards contain metadata, with bounded column pages. Activity and attempts load bounded pages; use older/more controls rather than loading entire history. CLI and MCP offer the same scoped reads; machine clients cannot approve feature execution or completion. Paired LAN browsers use explicit capability grants and CSRF-protected human decisions. Provider, connector and agent administration remain local.
+
+## Reproducible offline walkthrough
+
+From a contributor checkout with dependencies installed:
+
+```powershell
+rtk proxy .venv/Scripts/python.exe scripts/demo_workbench.py --feature
+```
+
+The script creates a disposable repository/profile, generates a deterministic three-task greeting plan, imports it, approves the batch as a clearly named fixture operator, runs independent unittest checks, reviews completion, and verifies preserved keys/revisions/receipts after restart. It uses no paid provider. It does not authorize unattended execution in your real workspace.
+
+The automated whole-feature test additionally covers a pinned local worker, a mocked OpenAI-compatible cloud worker and a real HTTPS connector with a disposable trusted CA. These prove host routing, verification and boundaries; they do not certify live vendor accounts or physical-device CA onboarding.

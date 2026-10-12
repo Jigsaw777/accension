@@ -5,11 +5,12 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-from ..contracts import strictest
+from ..contracts import model_selection_scope, strictest
 from ..providers import ProviderError
 from ..routing import deterministic
 from ..schema import Request
 from .events import append_event
+from .model_options import inventory_hash
 from .policy import authorize
 from .schema import CreatePRD, Operation, PlanningCommand, PlanningInput, PRDSpec, WorkItemSpec, budget_microusd
 from .service import CommandResult, payload_hash
@@ -22,6 +23,58 @@ class Planning:
         self.runtime, self.service, self.engine = runtime, runtime.service, runtime.engine
         self.store = self.service.store
         self.tasks = {}
+
+    def list(self, workspace_id, principal, *, project_id=None, cursor=None, limit=50):
+        authorize(principal, workspace_id, "workspace.read")
+        if type(limit) is not int or not 1 <= limit <= 50:
+            raise WorkbenchError("INVALID_PAGE", "Operation limit must be 1..50", 422)
+        scope = {"kind": "operations", "workspace": workspace_id, "project": project_id, "principal": principal.id}
+        before = None
+        before_time = None
+        if cursor:
+            position = self.runtime.journal.decode(cursor)
+            if (
+                not isinstance(position, dict)
+                or any(position.get(k) != v for k, v in scope.items())
+                or not isinstance(position.get("before"), str)
+                or type(position.get("created_at")) is not int
+                or type(position.get("expires")) is not int
+                or position["expires"] <= now()
+            ):
+                raise WorkbenchError("CURSOR_QUERY_MISMATCH", "Operation scope changed", 422)
+            before = position["before"]
+            before_time = position["created_at"]
+        with self.store.router.lock:
+            rows = self.store.db.execute(
+                "SELECT id,kind,state,subject_id,error_code,created_at,updated_at FROM wb_operations WHERE workspace_id=? AND (? IS NULL OR created_at<? OR (created_at=? AND id<?))"
+                + (" AND json_extract(result_json,'$.input.project_id')=?" if project_id else "")
+                + " ORDER BY created_at DESC,id DESC LIMIT ?",
+                [
+                    workspace_id,
+                    before,
+                    before_time,
+                    before_time,
+                    before,
+                    *([project_id] if project_id else []),
+                    limit + 1,
+                ],
+            ).fetchall()
+            items = [dict(row) for row in rows[:limit]]
+            more = len(rows) > limit
+            return {
+                "items": items,
+                "has_more": more,
+                "next_cursor": self.runtime.journal.token(
+                    {
+                        **scope,
+                        "before": items[-1]["id"],
+                        "created_at": items[-1]["created_at"],
+                        "expires": now() + 900000,
+                    }
+                )
+                if more
+                else None,
+            }
 
     def context(self, body, principal):
         authorize(principal, body.workspace_id, "prd.write")
@@ -60,6 +113,7 @@ class Planning:
                 "cap": cap,
                 "template_hash": template.content_hash,
                 "prd": prd.model_dump(mode="json") if prd else None,
+                "inventory": inventory_hash(self.engine.settings),
             }
         )
         return repo, privacy, cap, template, prd, policy
@@ -67,13 +121,18 @@ class Planning:
     def quote(self, request, principal):
         body = PlanningInput.model_validate(request)
         repo, privacy, cap, _, _, policy = self.context(body, principal)
-        candidates = self.engine.router.candidates(
-            deterministic(body.requirement or "Decompose requirements"),
-            "planner",
-            ["code"],
-            privacy != "LOCAL_ONLY",
-            budget=cap / 1_000_000,
-        )
+        with model_selection_scope(
+            {"planner": body.model_selection.model_dump(), "repairer": body.model_selection.model_dump()}
+        ):
+            candidates = self.engine.router.candidates(
+                deterministic(body.requirement or "Decompose requirements"),
+                "planner",
+                ["code"],
+                privacy != "LOCAL_ONLY",
+                budget=cap / 1_000_000,
+            )
+        if not candidates:
+            raise WorkbenchError("MODEL_INELIGIBLE", "No eligible selected planner", 422)
         value = {
             "principal": principal.id,
             "input": payload_hash(body.model_dump(mode="json")),
@@ -106,6 +165,14 @@ class Planning:
                 ]
                 result = Operation.model_validate(data).model_dump(mode="json")
                 result["cost"] = self.engine.store.costs(record.get("request_id", operation_id))
+                result["selected_models"] = (record.get("input") or {}).get("model_selection", {"mode": "auto"})
+                result["actual_models"] = [
+                    dict(call)
+                    for call in self.store.db.execute(
+                        "SELECT model,provider_id,role,usage_source,cost_source,state FROM calls WHERE request=? ORDER BY id LIMIT 100",
+                        (record.get("request_id", operation_id),),
+                    )
+                ]
                 return result
             except (ValueError, TypeError, KeyError) as exc:
                 raise WorkbenchError("CORRUPT_DATA", "Invalid planning operation", 500) from exc
@@ -187,16 +254,25 @@ class Planning:
             repo, privacy, cap, template, prd, policy = self.context(body, principal)
             if record["policy"] != policy:
                 raise WorkbenchError("POLICY_CHANGED", "Planning policy changed")
-            if body.kind == "generate":
-                spec = await self.engine.generate_planning_document(
-                    body.requirement, body.constraints, privacy, cap / 1_000_000, PRDSpec, record["request_id"], repo
-                )
-                spec.constraints = list(dict.fromkeys(body.constraints + spec.constraints))
-                spec.require_complete()
-                template.document(spec.model_dump(mode="json"), complete=True)
-                outcome = {"spec": spec.model_dump(mode="json")}
-            else:
-                outcome = await self.decompose(body, prd, repo, privacy, cap, record["request_id"])
+            with model_selection_scope(
+                {"planner": body.model_selection.model_dump(), "repairer": body.model_selection.model_dump()}
+            ):
+                if body.kind == "generate":
+                    spec = await self.engine.generate_planning_document(
+                        body.requirement,
+                        body.constraints,
+                        privacy,
+                        cap / 1_000_000,
+                        PRDSpec,
+                        record["request_id"],
+                        repo,
+                    )
+                    spec.constraints = list(dict.fromkeys(body.constraints + spec.constraints))
+                    spec.require_complete()
+                    template.document(spec.model_dump(mode="json"), complete=True)
+                    outcome = {"spec": spec.model_dump(mode="json")}
+                else:
+                    outcome = await self.decompose(body, prd, repo, privacy, cap, record["request_id"])
             # Revoke/tighten during inference cannot commit under the previous quote.
             if self.context(body, principal)[-1] != policy:
                 raise WorkbenchError("POLICY_CHANGED", "Planning policy changed during inference")
@@ -306,7 +382,7 @@ class Planning:
                     verifier_requirements=node.verifier_requirements,
                     constraints=plan.constraints,
                     context_notes=plan.architecture_summary,
-                    requirement_ids=group,
+                    requirement_ids=self.coverage(node, group),
                 )
                 spec.require_ready("ENGINE", "registered")
                 items.append(
@@ -338,6 +414,13 @@ class Planning:
             "edges": edges,
             "coverage": flat,
         }
+
+    @staticmethod
+    def coverage(node, group):
+        mapped = node.requirement_ids or (group if len(group) == 1 else [])
+        if not mapped or len(set(mapped)) != len(mapped) or not set(mapped) <= set(group):
+            raise WorkbenchError("INVALID_COVERAGE", "Each task must identify its actual requirement coverage", 422)
+        return mapped
 
     async def close(self):
         tasks = list(self.tasks.values())
@@ -401,7 +484,7 @@ class Planning:
                             verifier_requirements=node.verifier_requirements,
                             constraints=list(dict.fromkeys(prd.spec.constraints + plan.constraints)),
                             context_notes=plan.architecture_summary,
-                            requirement_ids=group,
+                            requirement_ids=self.coverage(node, group),
                         )
                         spec.require_ready("ENGINE", project.repository_ref)
                         items.append(
@@ -555,6 +638,8 @@ class Planning:
                 action = body.actions[key]
                 match = comparison.get(key, {"group": "new"})
                 old = self.store.get("work_item", workspace_id, match["item_id"]) if "item_id" in match else None
+                if action == "skip" and not old:
+                    continue
                 if action == "keep" and old:
                     mapping[key] = old.id
                     continue
@@ -644,7 +729,11 @@ class Planning:
                         )
                     elif action != "keep":
                         raise WorkbenchError("INVALID_SELECTION", "Obsolete items require keep or archive", 422)
-            edges = [(mapping[a], mapping[b]) for a, b in preview.proposal["edges"]]
+            if not mapping:
+                raise WorkbenchError("INVALID_SELECTION", "Select at least one task", 422)
+            if any(b in mapping and a not in mapping for a, b in preview.proposal["edges"]):
+                raise WorkbenchError("INVALID_SELECTION", "Selected tasks require their upstream dependencies", 422)
+            edges = [(mapping[a], mapping[b]) for a, b in preview.proposal["edges"] if a in mapping and b in mapping]
             for blocker, dependent in edges:
                 if dependent not in changed_ids:
                     existing = self.store.db.execute(

@@ -80,6 +80,8 @@ async def test_large_board_pages_indexed_bounded_and_no_inference(engine, monkey
             "display_key": "SC-" + str(number + 1),
             "title": "Scale " + str(number),
             "priority": number % 5,
+            "status": ("BACKLOG", "READY", "BLOCKED", "REVIEW", "DONE")[number % 5],
+            "archived_at": original["updated_at"] if number % 101 == 0 else None,
         }
         rows.append(tuple(row[column] for column in columns))
     event = dict(db.execute("SELECT * FROM wb_events WHERE entity_id=?", (sample["id"],)).fetchone())
@@ -149,6 +151,51 @@ async def test_large_board_pages_indexed_bounded_and_no_inference(engine, monkey
     assert len(page) == 200 and size <= 1_000_000 and count <= 801
     p95 = sorted(timings)[23]
     assert p95 <= 250, timings
+    import httpx
+
+    from local_ai_router.app import create_app
+    from local_ai_router.workbench.board import BoardQueries
+    from local_ai_router.workbench.schema import BoardQuery
+
+    compact_times, compact_counts, compact_sizes = [], [], []
+    boards = BoardQueries(runtime)
+    for search in ("", "Scale", "Scale 9999"):
+        for _ in range(10):
+            queries.clear()
+            db.set_trace_callback(queries.append)
+            begin = time.perf_counter()
+            compact = boards.page(BoardQuery(workspace_id=ws.id, query=search), HUMAN)
+            compact_times.append((time.perf_counter() - begin) * 1000)
+            compact_counts.append(len([q for q in queries if q.lstrip().upper().startswith(("SELECT", "WITH"))]))
+            compact_sizes.append(len(json.dumps(compact).encode()))
+            db.set_trace_callback(None)
+    compact_p95 = sorted(compact_times)[28]
+    assert max(compact_counts) <= 30 and max(compact_sizes) <= 400 * 1024
+    assert compact_p95 <= 250, compact_times
+    db.set_trace_callback(queries.append)
+    queries.clear()
+    column = boards.page(BoardQuery(workspace_id=ws.id), HUMAN, state="BACKLOG")
+    db.set_trace_callback(None)
+    assert len([q for q in queries if q.lstrip().upper().startswith(("SELECT", "WITH"))]) <= 6
+    assert len(column["columns"][0]["items"]) <= 20
+    app = create_app(engine.settings, engine)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://127.0.0.1:8765",
+        headers={"Authorization": "Bearer " + engine.settings.token},
+    ) as client:
+
+        async def read():
+            begin = time.perf_counter()
+            response = await client.get("/accs/v1/workbench/board", params={"workspace_id": ws.id})
+            duration = (time.perf_counter() - begin) * 1000
+            assert response.status_code == 200, response.text
+            assert len(response.content) <= 400 * 1024
+            return duration
+
+        http_times = await asyncio.gather(*(read() for _ in range(10)))
+    http_p95 = sorted(http_times)[9]
+    assert http_p95 <= 400, http_times
     tracemalloc.start()
 
     async def disconnected():
@@ -194,6 +241,13 @@ async def test_large_board_pages_indexed_bounded_and_no_inference(engine, monkey
         "samples": 25,
         "warmup": "first sample included",
         "board_p95_ms": p95,
+        "compact_board_p95_ms": compact_p95,
+        "compact_sql_counts": compact_counts,
+        "compact_payload_bytes": compact_sizes,
+        "concurrent_http_clients": 10,
+        "http_p95_ms": http_p95,
+        "http_latency_ms": http_times,
+        "percentile_method": "nearest rank, cold first sample included; compact 30 samples, HTTP 10 simultaneous requests",
         "page_bytes": size,
         "sql_statements_per_page": count,
         "board_query_plan": plan,

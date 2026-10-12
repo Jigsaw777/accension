@@ -4,16 +4,19 @@ import json
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from .errors import PrivacyViolation
-from .schema import EgressBudget
+from .schema import EgressBudget, uid
 
 ORDER = {"LOCAL_ONLY": 0, "CLOUD_REDACTED": 1, "CLOUD_ALLOWED": 2}
 _contract = ContextVar("accension_execution_contract", default=None)
 _execution = ContextVar("accension_workbench_execution", default=None)
 _observer = ContextVar("accension_execution_observer", default=None)
+_model_selections = ContextVar("accension_model_selections", default=None)
+_proposal = ContextVar("accension_host_proposal", default=None)
+_attempt_context = ContextVar("accension_attempt_context", default=None)
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class ExecutionSignal:
     model_id: str | None = None
     checks: tuple = ()
     status: str | None = None
+    event_id: str = field(default_factory=uid)
 
 
 @contextmanager
@@ -56,7 +60,9 @@ class ExecutionAborted(RuntimeError):
 
 
 @contextmanager
-def execution_scope(guard, roles, models=None, tools=None, required_review=False):
+def execution_scope(
+    guard, roles, models=None, tools=None, required_review=False, *, model_bindings=None, attempt_context=None
+):
     token = _execution.set(
         {
             "guard": guard,
@@ -66,25 +72,76 @@ def execution_scope(guard, roles, models=None, tools=None, required_review=False
             "required_review": required_review,
         }
     )
+    attempt_token = _attempt_context.set(attempt_context)
+    try:
+        with model_selection_scope(model_bindings or {}):
+            yield
+    finally:
+        _execution.reset(token)
+        _attempt_context.reset(attempt_token)
+
+
+def current_attempt_context():
+    return _attempt_context.get()
+
+
+@contextmanager
+def proposal_scope(request):
+    token = _proposal.set(request)
     try:
         yield
     finally:
-        _execution.reset(token)
+        _proposal.reset(token)
+
+
+def current_proposal():
+    return _proposal.get()
 
 
 def review_required():
     return bool((_execution.get() or {}).get("required_review"))
 
 
+def normalized_role(role):
+    return {"repair": "repairer", "fast_executor": "executor", "complex_executor": "executor"}.get(role, role)
+
+
+@contextmanager
+def model_selection_scope(bindings):
+    selected = dict(_model_selections.get() or {})
+    for role, binding in bindings.items():
+        if binding["mode"] == "auto":
+            continue
+        role = normalized_role(role)
+        order = [binding["primary_model_id"], *binding.get("fallback_model_ids", [])]
+        if role in selected:
+            order = [model for model in order if model in selected[role]]
+        selected[role] = order
+    token = _model_selections.set(selected)
+    try:
+        yield
+    finally:
+        _model_selections.reset(token)
+
+
+def model_order(role):
+    return (_model_selections.get() or {}).get(normalized_role(role))
+
+
 def execution_allowed(model, role):
+    order = model_order(role)
+    if order is not None and model.id not in order:
+        return False
     scope = _execution.get()
     if scope is None:
         return True
-    role = {"repair": "repairer", "fast_executor": "executor", "complex_executor": "executor"}.get(role, role)
+    role = normalized_role(role)
     return role in scope["roles"] and (scope["models"] is None or model.id in scope["models"])
 
 
 def execution_guard(model=None, role=None, tools=None):
+    if model is not None and not execution_allowed(model, role):
+        raise ExecutionAborted("Execution-local model/role restriction")
     scope = _execution.get()
     if scope is None:
         return

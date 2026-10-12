@@ -118,6 +118,25 @@ def usage_from(data):
     )
 
 
+def reported_usage_fields(data):
+    """Missing categories stay unknown even though the compatibility Usage fills zeros."""
+    gemini = "usageMetadata" in data
+    usage = data.get("usageMetadata" if gemini else "usage") or {}
+    aliases = {
+        "input_tokens": ["promptTokenCount"] if gemini else ["input_tokens", "prompt_tokens", "inputTokens"],
+        "output_tokens": ["candidatesTokenCount"] if gemini else ["output_tokens", "completion_tokens", "outputTokens"],
+        "cached_tokens": ["cachedContentTokenCount"] if gemini else ["cache_read_input_tokens", "cacheReadInputTokens"],
+        "cache_write_tokens": [] if gemini else ["cache_creation_input_tokens", "cacheWriteInputTokens"],
+    }
+    fields = [
+        name for name, keys in aliases.items() if any(type(usage.get(key)) is int and usage[key] >= 0 for key in keys)
+    ]
+    details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}
+    if type(details.get("cached_tokens")) is int and details["cached_tokens"] >= 0:
+        fields.append("cached_tokens")
+    return list(dict.fromkeys(fields))
+
+
 async def mcp_call(provider, tool: str, args: dict, timeout: float):
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
@@ -281,6 +300,8 @@ class Providers:
                 "Context exceeds model window; retrieve fewer files, split the task or select a larger context model"
             )
         estimate = estimate_cost(model, inputs, maximum, reserve=True)
+        if provider.kind == "connector":
+            estimate = min(budget, call_budget if call_budget is not None else budget)
         if call_budget is not None and estimate > call_budget + 1e-10:
             from .store import BudgetExceeded
 
@@ -290,7 +311,23 @@ class Providers:
             self.semaphores.setdefault(model.id, asyncio.Semaphore(model.concurrency_limit)),
         ):
             self._rate(model)
-            call = self.store.reserve(request_id, session, role, model, estimate, budget, task_id=task_id)
+            from .schema import CallModelSnapshot
+
+            snapshot = CallModelSnapshot.model_validate(
+                {key: getattr(model, key) for key in CallModelSnapshot.model_fields}
+            )
+            call = self.store.reserve(
+                request_id,
+                session,
+                role,
+                model,
+                estimate,
+                budget,
+                task_id=task_id,
+                occurred_at=int(time.time() * 1000),
+                provider_id=model.provider,
+                model_snapshot=snapshot.model_dump(),
+            )
             start = time.monotonic()
             try:
                 from .contracts import reserve_egress
@@ -298,7 +335,7 @@ class Providers:
                 reserve_egress(self.store, call, request_id, model, role, inputs)
             except BaseException:
                 # No bytes have been transmitted: this is a safe monetary refund.
-                self.store.settle(call, 0, {}, 0)
+                self.store.settle(call, 0, {}, 0, cost_source="known_zero_no_send", usage_source="unknown")
                 raise
             try:
                 args = (provider, model, messages, role, maximum, schema, task_id or request_id)
@@ -313,7 +350,28 @@ class Providers:
                     if (u.input_tokens or u.output_tokens)
                     else estimate
                 )
-                self.store.settle(call, actual, u.model_dump(), time.monotonic() - start)
+                if provider.kind == "connector":
+                    connector_cost = result.raw.get("connector_cost", {})
+                    actual = (
+                        connector_cost["microusd"] / 1000000
+                        if connector_cost.get("source") == "connector_reported"
+                        else estimate
+                    )
+                self.store.settle(
+                    call,
+                    actual,
+                    u.model_dump(),
+                    time.monotonic() - start,
+                    usage_source=result.usage_source,
+                    reported_usage_fields=result.reported_usage_fields,
+                    cost_source="connector_reported"
+                    if provider.kind == "connector"
+                    and result.raw.get("connector_cost", {}).get("source") == "connector_reported"
+                    else "priced_usage"
+                    if result.usage_source == "provider_reported"
+                    and {"input_tokens", "output_tokens"} <= set(result.reported_usage_fields)
+                    else "budget_estimate",
+                )
                 self.store.health_result(model.id, True)
                 self.store.provider_health(model.provider, "HEALTHY")
                 from .dna import observe
@@ -330,8 +388,20 @@ class Providers:
                 )
                 return result
             except BaseException as exc:
-                self.store.settle(call, None, {}, time.monotonic() - start, failed=True)
+                self.store.settle(
+                    call,
+                    None,
+                    {},
+                    time.monotonic() - start,
+                    failed=True,
+                    usage_source="unknown",
+                    cost_source="budget_estimate",
+                )
                 if isinstance(exc, asyncio.CancelledError):
+                    raise
+                from .contracts import ExecutionAborted
+
+                if isinstance(exc, ExecutionAborted):
                     raise
                 error = normalize_error(exc)
                 from .dna import observe
@@ -354,6 +424,13 @@ class Providers:
         )
 
     async def _generate(self, provider, model, messages, role, maximum, schema, task_id, probe=None):
+        if provider.kind == "connector":
+            from .workbench.connectors import ConnectorTransport
+
+            async with asyncio.timeout(provider.connector.timeout_seconds):
+                return await ConnectorTransport().generate(
+                    self.context(provider, model.provider), model, messages, maximum, schema, role=role
+                )
         timeout = self.settings.routing.timeouts.get(
             role, self.settings.routing.timeouts["local" if provider.local else "cloud"]
         )
