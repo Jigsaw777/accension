@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Accension remote Workbench</title><link rel="stylesheet" href="/assets/workbench.css"><script src="/assets/workbench-lan.js" defer></script></head>
+<body><header><h1>Remote Workbench</h1><p id="connection" role="status" aria-live="polite">Pair this browser</p></header>
+<main><p id="notice" role="status" aria-live="polite"></p>
+<section id="pairing"><h2>Pair with your host</h2><p>Open the exact HTTPS URL supplied by your host. Trust its issuing CA through your device settings. Compare the verification phrase on both screens before host approval.</p>
+<form id="pair-form"><label>One-time pairing code<input name="code" required maxlength="128" autocomplete="off"></label><label>Device display name<input name="name" required maxlength="80" value="Remote browser"></label><button>Request pairing</button></form><p id="phrase" role="status"></p><button id="claim" type="button" hidden>Host approved — connect</button></section>
+<section id="workspace-view" hidden><nav aria-label="Remote navigation"><button id="refresh" type="button">Refresh</button><button id="logout" type="button" data-mutation>Log out</button></nav><label>Workspace<select id="workspace"></select></label><section id="content" aria-label="Work item board"></section><section id="detail" aria-label="Work item details"></section></section>
+</main></body></html>

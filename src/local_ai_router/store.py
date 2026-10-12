@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from .config import Settings
+from .db_migrations import initialize_database
 
 
 class BudgetExceeded(RuntimeError):
@@ -27,21 +28,22 @@ def cache_key(*parts) -> str:
 class Store:
     def __init__(self, settings: Settings):
         self.settings = settings
+        path = settings.state / "router.sqlite3"
+        self.db = sqlite3.connect(path, timeout=10, check_same_thread=False, isolation_level=None)
+        self.db.row_factory = sqlite3.Row
+        try:
+            initialize_database(self.db, path)
+        except BaseException:
+            self.db.close()
+            raise
+
         from .observability import EventLog
 
-        self.log = EventLog(settings)
-        self.db = sqlite3.connect(
-            settings.state / "router.sqlite3", timeout=10, check_same_thread=False, isolation_level=None
-        )
-        self.db.row_factory = sqlite3.Row
-        version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version < 3 and self.db.execute("SELECT 1 FROM sqlite_master WHERE name='calls'").fetchone():
-            backup = settings.state / "backups"
-            backup.mkdir(exist_ok=True)
-            with sqlite3.connect(
-                backup / ("state-v" + str(version) + "-" + str(time.time_ns()) + ".sqlite3")
-            ) as target:
-                self.db.backup(target)
+        try:
+            self.log = EventLog(settings)
+        except BaseException:
+            self.db.close()
+            raise
         self.lock = threading.RLock()
         # In-process activity is separate from durable uncertain charges. A killed
         # gateway must not permanently prevent configuration after restart.
@@ -50,52 +52,6 @@ class Store:
         self.hits = self.misses = 0
         self.trace_listener = None
         self.savings = None
-        self.db.executescript("""
-        PRAGMA journal_mode=WAL;
-        PRAGMA busy_timeout=10000;
-        CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY, value TEXT NOT NULL, expires REAL NOT NULL);
-        CREATE TABLE IF NOT EXISTS traces(seq INTEGER PRIMARY KEY, request TEXT, stage TEXT, stamp REAL, data TEXT);
-        CREATE INDEX IF NOT EXISTS traces_request ON traces(request);
-        CREATE TABLE IF NOT EXISTS calls(id TEXT PRIMARY KEY, request TEXT, session TEXT, day TEXT, role TEXT,
-          model TEXT, frontier INTEGER, cost REAL, state TEXT, usage TEXT, latency REAL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS task_calls(call_id TEXT PRIMARY KEY, task_id TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS task_calls_task ON task_calls(task_id);
-        CREATE TABLE IF NOT EXISTS profiles(model TEXT, family TEXT, n INTEGER, success REAL, latency REAL,
-          PRIMARY KEY(model,family));
-        CREATE TABLE IF NOT EXISTS health(model TEXT PRIMARY KEY, failures INTEGER, until REAL);
-        CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT, fingerprint TEXT, status TEXT, data TEXT);
-        CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS model_registry(id TEXT PRIMARY KEY, provider TEXT, data TEXT NOT NULL, updated REAL NOT NULL);
-        CREATE TABLE IF NOT EXISTS provider_health(provider TEXT PRIMARY KEY, status TEXT NOT NULL, until REAL, error_code TEXT, stamp REAL);
-        CREATE TABLE IF NOT EXISTS benchmarks(model TEXT, category TEXT, stamp REAL, passed INTEGER, evidence TEXT, latency REAL,
-          PRIMARY KEY(model,category));
-        CREATE TABLE IF NOT EXISTS outcomes(seq INTEGER PRIMARY KEY, model TEXT, family TEXT, stamp REAL, data TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS calls_request ON calls(request);
-        CREATE INDEX IF NOT EXISTS calls_session ON calls(session);
-        CREATE INDEX IF NOT EXISTS registry_provider_id ON model_registry(provider,id);
-        CREATE TABLE IF NOT EXISTS dna(model TEXT, dimension TEXT, specialization TEXT, samples INTEGER, value REAL, sources TEXT, stamp REAL,
-          PRIMARY KEY(model,dimension,specialization));
-        CREATE TABLE IF NOT EXISTS egress(call TEXT PRIMARY KEY, request TEXT, node TEXT, provider TEXT, model TEXT, role TEXT,
-          tokens INTEGER, files TEXT, state TEXT, stamp REAL, measurement TEXT);
-        CREATE INDEX IF NOT EXISTS egress_request_node ON egress(request,node);
-        CREATE TABLE IF NOT EXISTS receipts(run TEXT PRIMARY KEY, request TEXT, stamp REAL, data TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS receipt_request ON receipts(request);
-        CREATE TABLE IF NOT EXISTS savings_runs(request TEXT PRIMARY KEY, run TEXT, session TEXT, day TEXT,
-          status TEXT, kind TEXT, stamp REAL, updated REAL, baseline TEXT, data TEXT);
-        CREATE INDEX IF NOT EXISTS savings_status_updated ON savings_runs(status,updated);
-        CREATE INDEX IF NOT EXISTS savings_updated ON savings_runs(updated);
-        CREATE TABLE IF NOT EXISTS usage_records(call TEXT PRIMARY KEY, request TEXT, task TEXT, role TEXT, stamp REAL, data TEXT);
-        CREATE INDEX IF NOT EXISTS usage_request ON usage_records(request,stamp);
-        CREATE TABLE IF NOT EXISTS savings_gaps(call TEXT PRIMARY KEY, session TEXT, day TEXT, stamp REAL);
-        CREATE INDEX IF NOT EXISTS savings_gaps_day ON savings_gaps(day);
-        CREATE INDEX IF NOT EXISTS savings_gaps_session ON savings_gaps(session);
-        CREATE INDEX IF NOT EXISTS savings_gaps_stamp ON savings_gaps(stamp);
-        CREATE TABLE IF NOT EXISTS savings_factors(request TEXT, kind TEXT, stage TEXT, data TEXT, PRIMARY KEY(request,kind,stage));
-        CREATE TABLE IF NOT EXISTS savings_totals(bucket TEXT, key TEXT, data TEXT, PRIMARY KEY(bucket,key));
-        CREATE TABLE IF NOT EXISTS savings_revision(id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER);
-        INSERT OR IGNORE INTO savings_revision VALUES(1,0);
-        PRAGMA user_version=3;
-        """)
 
     @contextmanager
     def transaction(self):

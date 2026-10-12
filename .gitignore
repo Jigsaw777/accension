@@ -11,6 +11,8 @@ examples/demo-repo/
 graphify-out/
 docs/verification.json
 docs/test-results.xml
+# Keep local documentation additions out of commits; existing public guides stay tracked.
+/docs/
 REPORT.md
 scripts/router.cmd
 scripts/codex-*.cmd

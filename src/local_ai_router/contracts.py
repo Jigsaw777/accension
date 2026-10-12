@@ -4,12 +4,95 @@ import json
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Literal
 
 from .errors import PrivacyViolation
 from .schema import EgressBudget
 
 ORDER = {"LOCAL_ONLY": 0, "CLOUD_REDACTED": 1, "CLOUD_ALLOWED": 2}
 _contract = ContextVar("accension_execution_contract", default=None)
+_execution = ContextVar("accension_workbench_execution", default=None)
+_observer = ContextVar("accension_execution_observer", default=None)
+
+
+@dataclass(frozen=True)
+class ExecutionSignal:
+    kind: Literal[
+        "execution_start",
+        "worker_start",
+        "validation_start",
+        "validation_end",
+        "review_start",
+        "review_end",
+        "execution_end",
+        "receipt_finalized",
+    ]
+    task_id: str | None = None
+    model_id: str | None = None
+    checks: tuple = ()
+    status: str | None = None
+
+
+@contextmanager
+def observer_scope(observer):
+    token = _observer.set(observer)
+    try:
+        yield
+    finally:
+        _observer.reset(token)
+
+
+def execution_signal(kind, **fields):
+    observer = _observer.get()
+    if observer is not None:
+        if kind != "receipt_finalized":
+            execution_guard()
+        observer(ExecutionSignal(kind, **fields))
+
+
+class ExecutionAborted(RuntimeError):
+    """Lost authorization must abort, never enter an Engine repair loop."""
+
+
+@contextmanager
+def execution_scope(guard, roles, models=None, tools=None, required_review=False):
+    token = _execution.set(
+        {
+            "guard": guard,
+            "roles": set(roles),
+            "models": set(models) if models is not None else None,
+            "tools": set(tools or []),
+            "required_review": required_review,
+        }
+    )
+    try:
+        yield
+    finally:
+        _execution.reset(token)
+
+
+def review_required():
+    return bool((_execution.get() or {}).get("required_review"))
+
+
+def execution_allowed(model, role):
+    scope = _execution.get()
+    if scope is None:
+        return True
+    role = {"repair": "repairer", "fast_executor": "executor", "complex_executor": "executor"}.get(role, role)
+    return role in scope["roles"] and (scope["models"] is None or model.id in scope["models"])
+
+
+def execution_guard(model=None, role=None, tools=None):
+    scope = _execution.get()
+    if scope is None:
+        return
+    scope["guard"]()
+    if model is not None and not execution_allowed(model, role):
+        raise ExecutionAborted("Execution-local model/role restriction")
+    if tools is not None and not set(tools) <= scope["tools"]:
+        raise ExecutionAborted("Execution-local tool restriction")
 
 
 def tighter(*values):

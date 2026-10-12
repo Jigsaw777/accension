@@ -214,5 +214,77 @@
     ],
     "count": 1,
     "reason": "Runs a pinned checksum-verified Gitleaks binary with argv, bounded timeouts and complete redaction. Only sanitized category/path/commit metadata leaves the report."
+  },
+  {
+    "id": "e0e94a2d41b5ca65b457daa7479f785af80990417196bada1d4966512a1267bd",
+    "file": "src/local_ai_router/workbench/execution.py",
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "EngineAgentAdapter.bind compiles an approved single-node plan through registered repository paths, current fingerprint, frozen skills and ownership guards. Method-name false positive; it opens no listener."
+  },
+  {
+    "id": "c8a51f2f88678588c4f9e16d3279668dc7562fc0108dc7f0370917603149ae07",
+    "reason": "Reviewed WB22 disposable demo: constant git init argv, fresh caller-created temporary root, no shell, captured output, hidden Windows process; never opens live repository."
+  },
+  {
+    "id": "0a5c60e5435f4e8434f92aafab80947ce32f87fec5d13ec39b6ab00d69789d4b",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 101,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "a3dfcb0823057cdfa060e2ea423226ea69b2378e60a767259b65819c5f14141e",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 107,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "cf0fa18ad9049e3c8ace26f66ab935cf144d0e8da783789232c5457497d3076c",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 108,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "88c193fee68cb2d4b0d08ef8374942b3ed15577665522451bd425d179ba4793a",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 110,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "727c924d07d5758ccfc70f16e35e8fdf3dafadf05382352e0e139cf020231133",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 120,
+    "categories": [
+      "cfg.load"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "fca35897977d994b795e900eed103a48cc9449f164a3fde3c2b0910b612219df",
+    "file": "scripts/check_local.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "WB31 contributor-only Node syntax check: installed Node path, fixed bundled filenames, argv without shell. No imported data or production execution."
   }
 ]

@@ -38,6 +38,11 @@ def main():
         result = subprocess.run([sys.executable, *command], check=False)
         if result.returncode:
             raise SystemExit(result.returncode)
+    node = shutil.which("node")
+    if node is None:
+        raise SystemExit("Install Node to run the required JavaScript syntax checks")
+    for name in ("app.js", "workbench.js", "workbench-lan.js"):
+        subprocess.run([node, "--check", "src/local_ai_router/static/" + name], check=True)
     zizmor = shutil.which("zizmor") or str(
         Path(sys.executable).with_name("zizmor.exe" if sys.platform == "win32" else "zizmor")
     )

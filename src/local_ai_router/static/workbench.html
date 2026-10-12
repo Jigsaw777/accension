@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Accension Workbench</title>
+    <link rel="stylesheet" href="/static/workbench.css" />
+    <script src="/static/workbench.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a href="/ui">Accension settings</a>
+      <h1>Workbench</h1>
+      <p id="connection" role="status" aria-live="polite">Connecting</p>
+    </header>
+    <nav id="navigation" aria-label="Workbench navigation"></nav>
+    <main>
+      <section class="filters" aria-label="Workspace filters">
+        <label
+          >Workspace
+          <select id="workspace"></select></label
+        ><label
+          >Project
+          <select id="project"></select></label
+        ><button id="refresh" type="button">Refresh</button>
+      </section>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="content" aria-label="Workbench content"></section>
+      <section id="detail" aria-label="Details"></section>
+    </main>
+  </body>
+</html>

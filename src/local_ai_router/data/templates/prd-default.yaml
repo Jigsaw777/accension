@@ -1,0 +1,21 @@
+schema_version: 1
+id: prd-default
+kind: prd
+version: 1
+display_name: Product requirements
+required_fields: [problem_statement, objectives, scope, functional_requirements, acceptance_criteria]
+sections:
+  - {field: problem_statement, label: Problem, display: text}
+  - {field: background, label: Background, display: text}
+  - {field: objectives, label: Objectives, display: list}
+  - {field: scope, label: Scope, display: list}
+  - {field: out_of_scope, label: Out of scope, display: list}
+  - {field: functional_requirements, label: Functional requirements, display: list}
+  - {field: nonfunctional_requirements, label: Nonfunctional requirements, display: list}
+  - {field: constraints, label: Constraints, display: list}
+  - {field: assumptions, label: Assumptions, display: list}
+  - {field: dependencies, label: Dependencies, display: list}
+  - {field: risks, label: Risks, display: list}
+  - {field: acceptance_criteria, label: Acceptance criteria, display: checklist}
+  - {field: architecture_notes, label: Architecture notes, display: text}
+  - {field: milestones, label: Milestones, display: list}

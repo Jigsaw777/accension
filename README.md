@@ -443,3 +443,11 @@ Start with [Contributing](CONTRIBUTING.md), run `python scripts/check_local.py`,
 Calibration is small-fixture evidence, not production-quality certification. Savings are counterfactual estimates, without invoice reconciliation or exact cross-vendor tokenization. Optional analytics cannot fail inference; incomplete accounting is surfaced, although a storage outage can prevent even an error marker from persisting. Repository retrieval is lexical/graph based; embedding transports are optional. Bedrock native probes are limited. Plugins, credential commands, MCP processes and validation are trusted software, not sandboxed. Resume requires a verified unfinished checkpoint; finalized runs need a fresh plan. Live paid client/provider combinations require separate validation in the intended environment.
 
 Licensed under [Apache-2.0](LICENSE). Copyright 2026 Sourik Ganguly and Accension contributors. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Workbench
+
+Workbench adds persistent projects, PRDs, dependent Work Items, real Engine attempts, checks/receipts and human review. Run `accs start`, then `accs workbench open`; use `accs workbench --help` for CLI commands. Browsing makes no inference calls. Existing V1 commands and management UI remain available.
+
+LAN is a separate, opt-in TLS interface. Install `.[lan]`, configure `workbench_lan` in the router home's `config/local.yaml` with a certificate, private key, exact HTTPS origins and allowed workspace IDs, then restart the daemon. Pair devices through local Workbench Settings and grant only the required capabilities. Clients must trust the certificate authority and its SAN must match the configured origin; no certificate bypass is supported. Physical-device trust onboarding and live provider spending were not verified.
+
+Workbench upgrades SQLite state to version 7 after creating a verified backup. Older binaries must not open upgraded state; downgrade requires backup restoration and loses post-backup database changes. It does not undo repository edits.
