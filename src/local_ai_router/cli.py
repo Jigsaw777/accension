@@ -282,6 +282,7 @@ def main(argv=None):
                     access_log=False,
                     log_level="warning",
                     proxy_headers=False,
+                    timeout_graceful_shutdown=10,
                 )
             )
             app.state.server = server

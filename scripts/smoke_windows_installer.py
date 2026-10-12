@@ -7,6 +7,7 @@ import os
 import socket
 import subprocess
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -61,7 +62,8 @@ def main(argv=None):
             )
             if result.returncode:
                 raise RuntimeError(
-                    f"{Path(str(command[0])).name} failed: " + result.stderr.decode(errors="replace")[-600:]
+                    f"{Path(str(command[0])).name} failed (exit {result.returncode}): "
+                    + result.stderr.decode(errors="replace")[-600:]
                 )
             return result.stdout.decode()
 
@@ -76,6 +78,7 @@ def main(argv=None):
             f"/DIR={install}",
             f"/GROUP={group}",
             "/TASKS=",
+            f"/LOG={folder / 'installer.log'}",
         ]
         run([installer, *flags])
         try:
@@ -127,11 +130,14 @@ def main(argv=None):
                     expect(page.locator("#page-title")).to_have_text("Board")
                     assert page.locator("aside").evaluate("n => getComputedStyle(n).position") == "fixed"
                     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+                # Upgrade with active browser event streams, not only closed tabs.
+                run([installer, *flags])
                 browser.close()
-            costs = json.loads(run([python, "-m", "local_ai_router.cli", "costs", "--json"]))
-            assert costs["calls"] == 0
+            import sqlite3
+
+            with closing(sqlite3.connect(home / ".router/router.sqlite3")) as database:
+                assert database.execute("SELECT COUNT(*) FROM calls").fetchone()[0] == 0
             print("PASS: installed asset hashes, branded light/dark UI, shortcuts and zero inference", flush=True)
-            run([installer, *flags])
             with httpx.Client(trust_env=False, timeout=4) as client:
                 try:
                     client.get(endpoint + "/health")

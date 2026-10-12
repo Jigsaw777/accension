@@ -18,6 +18,8 @@ Application files install to `%LOCALAPPDATA%\Programs\Accension`. Settings, cred
 
 Download and run the newest installer to update. The same application ID upgrades the existing installation and stops its hub before replacing files. Your profile and registered repositories are preserved. Closing a browser leaves the hub running; **Stop Accension** in the Start menu stops it. Windows **Installed apps → Accension → Uninstall** stops the hub and removes the runtime and shortcuts, keeping the profile.
 
+Stopping waits for the hub's cleanup marker, including open event-stream connections. If cleanup cannot finish, upgrade/uninstall stops with an error rather than replacing a runtime still in use. Inspect service logs and resolve the known worker before retrying.
+
 If a hub launched from a source checkout is already listening on port 8765, stop it with that checkout's `accs stop` first. A desktop launcher can reuse an already running hub, so opening a shortcut alone does not replace code served by an older process. After installing, reload the browser; check that Workbench has the Accension sidebar and green theme.
 
 An offline executable always contains the source snapshot from its build. It cannot obtain future code without downloading another package. The automation updates branch downloads after successful builds; it does not silently replace an installed application or interrupt work. Package version 1.0.0 can have multiple development builds: use `built_at`, `source_commit` and `ui_assets` in the accompanying manifest to distinguish them. Back up the profile before upgrades that migrate the database; downgrading schema version 7 requires backup restoration.

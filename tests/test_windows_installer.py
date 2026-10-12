@@ -129,3 +129,35 @@ async def test_logo_served_publicly_with_svg_media_type(engine):
             assert response.content == (STATIC / "logo.svg").read_bytes()
     finally:
         await app.state.workbench.close()
+
+
+def test_stop_waits_for_cleanup_marker_after_listener_closes(tmp_path, monkeypatch):
+    from local_ai_router import service
+
+    marker = tmp_path / "server.pid"
+    marker.write_text("123")
+    settings = SimpleNamespace(state=tmp_path, token="fixture", host="127.0.0.1", port=8765)
+    states = iter([True, False, False])
+    monkeypatch.setattr(service, "status", lambda _: {"running": next(states)})
+    sleeps = []
+
+    def sleep(_):
+        sleeps.append(True)
+        if len(sleeps) == 2:
+            marker.unlink()
+
+    monkeypatch.setattr(service.time, "sleep", sleep)
+
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, *args, **kwargs):
+            return SimpleNamespace(raise_for_status=lambda: None)
+
+    monkeypatch.setattr(service.httpx, "Client", lambda **kwargs: Client())
+    assert service.stop(settings) == {"status": "stopped", "running": False}
+    assert len(sleeps) == 2

@@ -9,13 +9,13 @@
     "reason": "Operator-configured credential command runs as argv without a shell, with a 15-second timeout. Output is never logged. Treat configuration as trusted code."
   },
   {
-    "id": "5050b48e054fae3872f4ac212bf7465e3d20793b23a645ab1097148efd2e6920",
+    "id": "8ba13fe7a3970f56ea11c50fb78a4394cf85ade5fea72171ae6937d5a10ac5c3",
     "file": "src/local_ai_router/cli.py",
     "categories": [
       "network-listener"
     ],
     "count": 1,
-    "reason": "Server settings validate loopback hosts; enrollment is fixed to 127.0.0.1. Access logging is disabled to avoid leaking local authentication URLs."
+    "reason": "Reviewed loopback-only validated server, proxy headers and access logs disabled. Ten-second HTTP graceful drain bounds lingering SSE; Workbench lifespan still validates execution cleanup and removes the owner marker only on completion."
   },
   {
     "id": "5fee56db78b4c617ec13314151d7891ad65e58eed4b49edf2ca20a56059eda2f",
