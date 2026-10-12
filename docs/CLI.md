@@ -150,3 +150,46 @@ Legacy commands: discover, models, integration preview/install, recovery list/in
 | 130 | User interruption |
 
 Launched clients propagate their own nonzero status. With `--json`, runtime failures include error, type and exit_code. Unknown commands and argument syntax errors still print standard argparse usage/error text to stderr and exit with code 2.
+
+## Workbench commands
+
+`accs`, `router` and `accension` share these commands. Workbench uses the running loopback daemon with its configured home; stopped service is a domain error. Browsing never constructs a new Engine or makes inference calls. All commands accept `--json`; use `COMMAND --help` for flags. Scope every project/item/agent/attempt read with `--workspace UUID`.
+
+| Family | Shipped actions |
+|---|---|
+| workspace/project | list, create, show, edit, archive |
+| prd | list, create, show, edit, revisions, submit-review, approve, archive, generate, decompose, reconcile |
+| work | list, create, show, edit, revisions, ready, block, unblock, unassign, cancel, retry, reopen, depend, comment, archive |
+| work execution | assignment-preview, assign, approve-execution, run, attempts, receipt, evidence, recover, manual-submit, request-review, approve, reject |
+| work imports | import-preview, import-commit |
+| agent | list, status, configure, activity, metrics |
+| workbench | status, open, pause, resume, events, privacy, operation, operations, board, models, delivery, delivery-preview |
+| template | list, preview, import, export |
+
+```sh
+accs workspace list --json
+accs workspace create --name Demo --command-id 11111111-1111-4111-8111-111111111111 --json
+accs workbench status --json
+accs workbench open
+accs template list --json
+```
+
+UUIDs below are illustrative. Replace them with IDs returned by your daemon; no example silently uses a production repository.
+
+```sh
+accs project create --workspace 11111111-1111-4111-8111-111111111111 --key DEMO --name Demo --repo-ref registered-reference --json
+accs prd create --workspace 11111111-1111-4111-8111-111111111111 --project 22222222-2222-4222-8222-222222222222 --file prd.json --json
+accs work create --workspace 11111111-1111-4111-8111-111111111111 --project 22222222-2222-4222-8222-222222222222 --file work-item.json --json
+accs work show DEMO-1 --workspace 11111111-1111-4111-8111-111111111111 --json
+accs work ready DEMO-1 --workspace 11111111-1111-4111-8111-111111111111 --expected-revision 1 --json
+accs work attempts DEMO-1 --workspace 11111111-1111-4111-8111-111111111111 --json
+accs workbench events --workspace 11111111-1111-4111-8111-111111111111 --after 0 --limit 50 --json
+```
+
+JSON/data-only YAML inputs are bounded to 256 KB, YAML nesting 16, with tags/anchors/aliases denied. Item/PRD files contain schema fields, not executables. `--file` is required for complete contracts and explicit import/reconciliation selections. Lists use `--limit`/`--cursor`; display keys require workspace scope. Revisions use UUID identity.
+
+Mutations require `--expected-revision` for existing entities and carry one `--command-id UUID`, generated once when omitted and returned to the caller. Reuse it only for identical retries. Planning quotes are obtained explicitly by the client. `--wait` polls long operations for a bounded interval; timeout or Ctrl+C does not cancel execution.
+
+Approval commands require `--reason`. Execution approval also accepts `--contract-hash`/`--policy-hash`, completion approval/rejection requires the displayed `--evidence-hash` and `--contract-revision`. These use the explicit local operator transport. Machine MCP cannot represent a human approval. `recover ATTEMPT_UUID --action inspect|resume|rollback|discard` requires owning-daemon reconciliation, current revision and workspace. No implicit recovery retry is performed.
+
+Device pairing/revoke and LAN configuration are shipped through local Settings and the scoped HTTP device command API, not a `device` CLI noun. Templates use `--template-version` for export. See the [Workbench guide](guides/workbench.md), [engineering contracts](WORKBENCH_CONTRACTS.md) and [validated request examples](examples/README.md).

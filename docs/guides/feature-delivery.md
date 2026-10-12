@@ -1,6 +1,6 @@
 # Feature delivery in Workbench
 
-Start the GUI with `accs start`, then `accs workbench open`. Windows desktop users can launch **Accension Workbench** from Start. The local installer is generated at `dist/windows/Accension-latest-windows-x64.exe`; its adjacent manifest records source and UI hashes. Build outputs and local implementation plans remain ignored.
+Start the GUI with `accs start`, then `accs workbench open`. Windows desktop users can launch **Accension** from Start to open Workbench. The local installer is generated at `dist/windows/Accension-latest-windows-x64.exe`; its adjacent manifest records source and UI hashes. Build outputs and local implementation plans remain ignored.
 
 ## Idea, review and execution
 

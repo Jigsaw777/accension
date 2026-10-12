@@ -8,6 +8,8 @@ import tempfile
 import venv
 from pathlib import Path
 
+from local_ai_router import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -33,7 +35,7 @@ def main():
         run([str(python), "-m", "pip", "install", str(wheels[-1])], base, env)
         run([str(cli), "--help"], base, env)
         version = json.loads(run([str(cli), "version", "--json"], base, env))
-        if version["version"] != "1.0.0":
+        if version["version"] != __version__:
             raise RuntimeError("Wheel reports an unexpected public version")
         doctor = json.loads(run([str(cli), "doctor", "--mock", "--json"], base, env))
         if doctor["database"] != "ok" or not doctor["logging"]["writable"]:

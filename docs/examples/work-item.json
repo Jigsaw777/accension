@@ -1,0 +1,63 @@
+{
+  "command_id": "03841094-ae43-47d8-bf3e-fb299105a18e",
+  "workspace_id": "102d30a3-e739-40ce-a734-5f4095e8ae95",
+  "project_id": "a45bb470-1a27-4584-95a0-0d882b122993",
+  "title": "Implement greeting function",
+  "type": "TASK",
+  "priority": 2,
+  "risk": 20,
+  "complexity": 20,
+  "execution_kind": "ENGINE",
+  "privacy_policy": "LOCAL_ONLY",
+  "budget_limit": "0.10",
+  "max_attempts": 3,
+  "engine_max_attempts": 2,
+  "quality_target": 0.9,
+  "review_policy": "HUMAN_APPROVAL_REQUIRED",
+  "spec": {
+    "objective": "Implement greet(name) with trimmed names and world fallback.",
+    "description": "Add the pure function used by the deterministic demo.",
+    "rationale": "Provides the behavior tested by the next Work Item.",
+    "acceptance_criteria": [
+      "greet(' Ada ') returns 'Hello, Ada!'.",
+      "greet('  ') returns 'Hello, world!'."
+    ],
+    "definition_of_done": [
+      "Registered tests pass.",
+      "Artifact hash and receipt retained.",
+      "Required human review approved."
+    ],
+    "relevant_files": [],
+    "allowed_paths": [
+      "greeting.py"
+    ],
+    "expected_artifacts": [
+      "greeting.py"
+    ],
+    "required_capabilities": [
+      "code"
+    ],
+    "required_tools": [
+      "propose_file_changes"
+    ],
+    "required_skills": [],
+    "validation_checks": [
+      "tests"
+    ],
+    "verifier_requirements": [
+      "Independent registered tests"
+    ],
+    "constraints": [
+      "Do not add network calls or dependencies."
+    ],
+    "context_notes": "Follow existing Python conventions.",
+    "requirement_ids": [
+      "FR-1",
+      "NFR-1"
+    ],
+    "source_provenance": {
+      "kind": "manual"
+    },
+    "git_references": []
+  }
+}

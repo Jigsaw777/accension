@@ -34,13 +34,13 @@ flowchart TD
 | Paired-device trust and listener | `workbench/devices.py`, `lan.py` |
 | Packaged role prompts | `data/prompts/<role>/v1.txt`; loaded by `engine.py` |
 | Windows packaging and proof | `installer/windows/`, `scripts/build_windows_installer.py`, `smoke_windows_installer.py` |
-| Public guides / synthetic captures | `guides/`, `guides/screenshots/` |
+| Public guides / synthetic captures | `docs/guides/`, `docs/guides/screenshots/` |
 
 Paths above are relative to `src/local_ai_router` unless they identify root installer/scripts/guides directories. Keep these Python imports stable; application history belongs in Git and API/schema contracts, not copied runtime version folders. Tests mirror the domain modules and use packaged prompt defaults.
 
 ## Version boundaries
 
-The public package currently reports 1.0.0. Workbench uses explicit API and schema contracts; database migrations currently advance through schema 7 and require verified backups. Role prompts use the existing `v1.txt` names and contribute content hashes to execution/cache identity. Operator overrides under the active home are private and do not replace packaged defaults in distribution.
+The public package reports 1.1.0. Workbench uses explicit API and schema contracts; database migrations advance through schema 9 and require verified backups. Schema 8 adds activity, model bindings and metrics; schema 9 adds feature delivery, grants and budget reservations. Role prompts use the existing `v1.txt` names and contribute content hashes to execution/cache identity. Operator overrides under the active home are private and do not replace packaged defaults in distribution.
 
 Local engineering handoffs use semantic-version folders and a `latest.json` pointer. Their architecture, task sequence and evidence apply only after checking the current source and user instruction. They are excluded from Git and wheels; end users follow these public guides. New handoffs must inherit earlier contracts explicitly and retain earlier versions unchanged.
 
@@ -52,4 +52,4 @@ Every mutation binds revisions and principal-scoped command IDs. Attempts freeze
 
 The Windows builder stages fresh package sources and refuses mismatched UI assets. Its manifest records source commit, build time, dependencies and every asset hash. CI performs a real isolated install/upgrade/uninstall before exposing build artifacts. Branch prerelease assets are mutable latest-successful-build pointers; their manifests identify the source snapshot. PR builds cannot update those download pointers.
 
-Read [core architecture](../ARCHITECTURE.md) and [security](../SECURITY.md) for routing, gateway, plugin and trusted-command boundaries.
+Read [core architecture](../../ARCHITECTURE.md) and [security](../../SECURITY.md) for routing, gateway, plugin and trusted-command boundaries.
