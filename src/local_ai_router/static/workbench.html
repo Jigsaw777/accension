@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Accension Workbench</title>
+    <link rel="icon" href="/static/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/workbench.css" />
+    <script src="/static/workbench.js" defer></script>
+  </head>
+  <body class="workbench">
+    <a class="skip-link" href="#main">Skip to workspace</a>
+    <aside>
+      <a class="brand" href="/ui/workbench"><img class="mark" src="/static/logo.svg" alt="" />Accension</a>
+      <p class="caption">LOCAL AI EXECUTION COMPILER</p>
+      <nav id="navigation" aria-label="Workbench navigation"></nav>
+      <div class="local-badge">
+        <p>Workbench · local workspace</p>
+        <a href="/ui">Accension settings</a>
+      </div>
+    </aside>
+    <main id="main" tabindex="-1">
+      <header>
+        <div>
+          <div class="eyebrow">WORKBENCH / LOCAL</div>
+          <p id="project-context" class="breadcrumb">Workspace</p>
+          <h1 id="page-title">Overview</h1>
+        </div>
+        <p id="connection" class="chip" role="status" aria-live="polite">Connecting</p>
+      </header>
+      <section class="filters" aria-label="Workspace filters">
+        <label
+          >Workspace
+          <select id="workspace"></select></label
+        ><label
+          >Project
+          <select id="project"></select></label
+        ><button id="refresh" class="quiet" type="button">Refresh</button>
+      </section>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="content" aria-label="Workbench content"></section>
+      <section id="detail" aria-label="Details"></section>
+    </main>
+  </body>
+</html>

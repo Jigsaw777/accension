@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import hashlib
 import json
 import time
 from functools import wraps
@@ -210,6 +211,8 @@ class Engine:
         )
         c = await self.router.classify(request.task, rid, graph)
         skill_contract = self.skills.resolve(request, c.task_family)
+        from .contracts import model_order
+
         key = cache_key(
             "plan-v3",
             request.model_dump(mode="json"),
@@ -218,6 +221,7 @@ class Engine:
             self.prompt_version(),
             budget,
             skill_contract.model_dump(),
+            model_order("planner"),
         )
         cached = self.store.get(key)
         if cached:
@@ -235,7 +239,9 @@ class Engine:
                 if candidates
                 else None
             )
-            if arbiter and arbiter.model_id:
+            from .contracts import model_order
+
+            if arbiter and arbiter.model_id and model_order("planner") is None:
                 candidates.sort(key=lambda m: m.id != arbiter.model_id)
             # Trivial explicitly named file changes can skip model planning.
             mentioned = re_files(request.task, graph.files)
@@ -282,20 +288,14 @@ class Engine:
                 candidates = self.router.candidates(
                     c, "planner", ["code"], repo.cloud_allowed, inputs=token_upper_bound(messages), budget=budget
                 )
-                if arbiter and arbiter.model_id:
+                if arbiter and arbiter.model_id and model_order("planner") is None:
                     candidates.sort(key=lambda m: m.id != arbiter.model_id)
                 plan = None
                 for model in candidates[: self.settings.routing.max_attempts]:
                     try:
                         with contract_scope(files=list(manifest)):
-                            result = await self.providers.generate(
-                                model,
-                                messages,
-                                "planner",
-                                rid,
-                                request.session_id,
-                                budget,
-                                schema=ExecutionPlan.model_json_schema(),
+                            result = await self._planning_response(
+                                model, messages, rid, request.session_id, budget, ExecutionPlan
                             )
                         try:
                             plan = ExecutionPlan.model_validate(parse_json(result.text))
@@ -379,6 +379,59 @@ class Engine:
         self.store.economics("pause", rid)
         return plan
 
+    async def _planning_response(self, model, messages, request_id, session, budget, response_schema):
+        return await self.providers.generate(
+            model, messages, "planner", request_id, session, budget, schema=response_schema.model_json_schema()
+        )
+
+    async def generate_planning_document(
+        self, task, constraints, privacy, budget, response_schema, request_id, repository=None
+    ):
+        from contextlib import ExitStack
+
+        if SECRET.search(task) or any(SECRET.search(c) for c in constraints):
+            raise ValueError("Secret-like planning text")
+        with ExitStack() as scopes:
+            scopes.enter_context(contract_scope(mode=privacy))
+            payload = {"goal": task, "constraints": constraints}
+            if repository:
+                scopes.enter_context(repository_scope(repository))
+                root = Path(repository.path).resolve(strict=True)
+                scopes.enter_context(repo_lock(root))
+                graph = ContextGraph(root, self.store, repository)
+                await asyncio.to_thread(graph.build)
+                payload["repository"] = {name: {"sha256": f["sha256"]} for name, f in graph.files.items()}
+            messages = [
+                {
+                    "role": "system",
+                    "content": "Write a requirements document as JSON only. Preserve supplied constraints. Do not approve or execute work.\n"
+                    + json.dumps(response_schema.model_json_schema()),
+                },
+                {"role": "user", "content": json.dumps(payload)},
+            ]
+            classification = deterministic(task)
+            candidates = self.router.candidates(
+                classification,
+                "planner",
+                ["code"],
+                privacy != "LOCAL_ONLY",
+                inputs=token_upper_bound(messages),
+                budget=budget,
+            )
+            self.store.economics("begin", request_id, "workbench-planning")
+            try:
+                for model in candidates[: self.settings.routing.max_attempts]:
+                    try:
+                        result = await self._planning_response(
+                            model, messages, request_id, "workbench-planning", budget, response_schema
+                        )
+                        return response_schema.model_validate(parse_json(result.text))
+                    except (ProviderError, ValueError) as exc:
+                        self.store.trace(request_id, "planner_fallback", model=model.id, error_type=type(exc).__name__)
+                raise ProviderError("No eligible planner produced a valid document")
+            finally:
+                self.store.economics("pause", request_id)
+
     def request_scope(self, request, repo):
         return contract_scope(
             mode=strictest(request.privacy, repo.privacy_mode),
@@ -391,6 +444,9 @@ class Engine:
         )
 
     def validate_plan(self, plan, root, repo):
+        from .contracts import execution_guard
+
+        execution_guard(tools=[tool for task in plan.tasks for tool in task.tools_required])
         self.skills.load([s.id for s in plan.skill_contract.skills], plan.skill_contract)
         if not repo.validation:
             raise ValueError("Register at least one independent validation check before execution")
@@ -503,10 +559,12 @@ class Engine:
             return await self._execute(plan.plan_id, root, request.session_id)
 
     @active_operation
-    async def execute_plan(self, plan_id, repo_path):
+    async def execute_plan(self, plan_id, repo_path, observer=None):
+        from .contracts import observer_scope
+
         repo = self.settings.repository(repo_path)
         root = Path(repo.path).resolve(strict=True)
-        with repository_scope(repo), repo_lock(root):
+        with repository_scope(repo), repo_lock(root), observer_scope(observer):
             return await self._execute(plan_id, root)
 
     @active_operation
@@ -552,6 +610,9 @@ class Engine:
         self.active_runs.add(plan_id)
         self.store.economics("begin", rid, session, run=plan_id)
         try:
+            from .contracts import execution_signal
+
+            execution_signal("execution_start")
             while pending:
                 ready = [t for t in pending.values() if set(t.dependencies) <= set(completed)]
                 batch = []
@@ -585,9 +646,11 @@ class Engine:
                     "UPDATE runs SET fingerprint=?, data=? WHERE id=?", (graph.fingerprint, json.dumps(data), plan_id)
                 )
                 self.store.trace(rid, "integration", completed_tasks=len(completed))
+            execution_signal("validation_start")
             final = await validate(
                 root, repo.validation, list(repo.validation), self.settings.routing.timeouts["tests"]
             )
+            execution_signal("validation_end", checks=tuple(final))
             self.store.trace(
                 rid, "validation", validation=[{k: v for k, v in x.items() if k != "output"} for x in final]
             )
@@ -612,6 +675,7 @@ class Engine:
                 "UPDATE runs SET status='complete', data=? WHERE id=?",
                 (json.dumps({**data, "result": result}), plan_id),
             )
+            execution_signal("execution_end", status="complete")
             return result
         except BaseException as exc:
             conflicts_left = edits.rollback()
@@ -629,6 +693,10 @@ class Engine:
             )
             if isinstance(exc, asyncio.CancelledError):
                 raise
+            from .workbench.connectors import ConnectorUncertain
+
+            if isinstance(exc, ConnectorUncertain):
+                raise
             raise RuntimeError(
                 f"Run {rid} failed ({type(exc).__name__}: {redact(str(exc))}). Error ID: {error_id}. Router edits rolled back; conflicts: {conflicts_left}"
             ) from None
@@ -636,6 +704,9 @@ class Engine:
             status = self.store.db.execute("SELECT status FROM runs WHERE id=?", (plan_id,)).fetchone()[0]
             try:
                 receipts.save(self, plan, root, edits, starting, status)
+                from .contracts import execution_signal
+
+                execution_signal("receipt_finalized", status=status)
             finally:
                 self.active_runs.discard(plan_id)
 
@@ -671,20 +742,29 @@ class Engine:
         prior_error = ""
         task_key = plan.request_id + "-" + task.id
         model_index, escalations, spent = 0, 0, self.store.task_cost(task_key)
+        failed_models = set()
         for attempt in range(min(task.max_attempts, self.settings.routing.max_attempts)):
+            from .contracts import execution_signal
+
+            execution_signal("worker_start", task_id=task.id)
             model = candidates[model_index]
             if attempt:
+                from .contracts import model_order
+
                 repair_candidates = self.router.candidates(
                     c,
                     "repair",
                     task.minimum_capabilities,
                     repo.cloud_allowed,
+                    excluded=failed_models if model_order("repairer") is not None else None,
                     budget=min(task.max_cost - spent, plan.allowed_budget),
                 )
                 if not repair_candidates:
                     raise ProviderError("No eligible repairer under current role, privacy and budget policy")
                 policy = self.settings.roles.get("repairer")
-                if not policy or policy.strategy == "auto":
+                from .contracts import model_order
+
+                if model_order("repairer") is None and (not policy or policy.strategy == "auto"):
                     repair_candidates.sort(key=lambda candidate: candidate.id != model.id)
                 model = repair_candidates[0]
             capsule, savings = graph.capsule(
@@ -746,7 +826,14 @@ class Engine:
             self.store.trace(plan.request_id, "context", task=task.id, **savings)
             start = time.monotonic()
             try:
-                with contract_scope(files=[f["path"] for f in capsule["files"]]):
+                from .contracts import proposal_scope
+
+                proposal = None
+                if self.settings.providers[model.provider].kind == "connector":
+                    from .workbench.connectors import build_request
+
+                    proposal = build_request(self.store, model, task, capsule, plan, task.max_cost - spent)
+                with contract_scope(files=[f["path"] for f in capsule["files"]]), proposal_scope(proposal):
                     result = await self.providers.generate(
                         model,
                         messages,
@@ -762,11 +849,16 @@ class Engine:
                 worker = WorkerResult.model_validate(parse_json(result.text))
                 if worker.status != "complete" or worker.escalation_requested or not worker.files_changed:
                     raise ValueError("Worker requested escalation or returned no edits")
+                from .contracts import execution_guard
+
+                execution_guard(model, "repair" if attempt else "executor", task.tools_required)
                 edits.apply(worker.files_changed, task.expected_artifacts)
                 async with self.validation_lock:
+                    execution_signal("validation_start", task_id=task.id, model_id=model.id)
                     checks = await validate(
                         graph.root, repo.validation, task.validation_commands, self.settings.routing.timeouts["tests"]
                     )
+                    execution_signal("validation_end", task_id=task.id, model_id=model.id, checks=tuple(checks))
                 self.store.trace(
                     plan.request_id,
                     "validation",
@@ -775,7 +867,10 @@ class Engine:
                 )
                 if not all(x["passed"] for x in checks):
                     raise ValueError(json.dumps(checks))
-                if task.risk >= self.settings.routing.reviewer_risk_threshold:
+                from .contracts import review_required
+
+                if task.risk >= self.settings.routing.reviewer_risk_threshold or review_required():
+                    execution_signal("review_start", task_id=task.id)
                     await self.review(
                         task, plan, capsule, worker, model, session, repo, remaining=task.max_cost - spent
                     )
@@ -813,6 +908,7 @@ class Engine:
                     "remaining_risks": worker.remaining_risks,
                 }
             except (ProviderError, ValueError) as exc:
+                failed_models.add(model.id)
                 spent = self.store.task_cost(task_key)
                 prior_error = str(redact(str(exc)))[:6000]
                 self.store.success(model.id, c.task_family, False, time.monotonic() - start)
@@ -863,6 +959,9 @@ class Engine:
                 status="deterministic_validation",
                 reason_code="NO_INDEPENDENT_REVIEWER",
             )
+            from .contracts import execution_signal
+
+            execution_signal("review_end", task_id=task.id, status="missing")
             return 0
         policy = self.settings.roles.get("reviewer")
         if not policy or policy.strategy == "auto":
@@ -900,7 +999,21 @@ class Engine:
         review = Review.model_validate(parse_json(result.text))
         self.store.trace(plan.request_id, "review", task=task.id, model=candidates[0].id, accepted=review.accepted)
         if not review.accepted:
+            from .contracts import execution_signal
+
+            execution_signal("review_end", task_id=task.id, model_id=candidates[0].id, status="rejected")
             raise ValueError("Reviewer: " + "; ".join(review.findings))
+        from .contracts import execution_signal
+
+        execution_signal(
+            "review_end",
+            task_id=task.id,
+            model_id=candidates[0].id,
+            status="accepted",
+            checks=tuple(
+                {"path": f.path, "hash": hashlib.sha256(f.content.encode()).hexdigest()} for f in worker.files_changed
+            ),
+        )
         u = result.usage
         return (
             estimate_cost(candidates[0], u.input_tokens, u.output_tokens, u.cached_tokens, u.cache_write_tokens)

@@ -18,14 +18,20 @@ def create_mcp(settings=None, shared_engine=None):
         if shared_engine is not None:
             yield shared_engine
             return
-        engine = Engine(settings)
-        watcher = asyncio.create_task(engine.discovery.watch())
+        # Validate the local DB, but Workbench-only stdio calls use the daemon.
+        from .store import Store
+
+        store = Store(settings)
+        store.close()
+        state = {"engine": None, "watcher": None}
         try:
-            yield engine
+            yield state
         finally:
-            watcher.cancel()
-            await asyncio.gather(watcher, return_exceptions=True)
-            await engine.close()
+            if state["watcher"] is not None:
+                state["watcher"].cancel()
+                await asyncio.gather(state["watcher"], return_exceptions=True)
+            if state["engine"] is not None:
+                await state["engine"].close()
 
     mcp = FastMCP(
         "local-ai-router",
@@ -38,7 +44,11 @@ def create_mcp(settings=None, shared_engine=None):
     def current_engine():
         if shared_engine is not None:
             return shared_engine
-        return mcp.get_context().request_context.lifespan_context
+        state = mcp.get_context().request_context.lifespan_context
+        if state["engine"] is None:
+            state["engine"] = Engine(settings)
+            state["watcher"] = asyncio.create_task(state["engine"].discovery.watch())
+        return state["engine"]
 
     async def with_engine(method, *args):
         async with asyncio.timeout(settings.routing.timeouts["mcp"]):
@@ -229,4 +239,7 @@ def create_mcp(settings=None, shared_engine=None):
             }
         raise ValueError("Unknown info action")
 
+    from .workbench.mcp import install as install_workbench
+
+    install_workbench(mcp, settings, shared_engine)
     return mcp

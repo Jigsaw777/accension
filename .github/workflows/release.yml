@@ -6,7 +6,7 @@ permissions:
 jobs:
   checks:
     if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/tests.yml
+    uses: $/.github/workflows/tests.yml
     permissions:
       contents: read
       security-events: write

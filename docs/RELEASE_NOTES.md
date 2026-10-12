@@ -1,29 +1,20 @@
-# Accension 1.0.0
+# Accension 1.1.0
 
-## What Accension does
+Accension 1.1.0 adds a persistent Workbench alongside model routing. Both views share one local Engine, configuration, database, logo and theme.
 
-Accension helps your AI models work together. It chooses models for a task, controls spending, checks repository changes and records the result. It runs on your computer and is open source. Cloud providers charge only when you choose to use them; local models have no API-token charges.
+- Organize projects, structured PRDs and dependent work items; generate and review planning proposals before import.
+- Review agents, model policy, file scope, registered checks and spending before starting a feature. Completion requires the applicable evidence-bound review.
+- Inspect recorded attempts, artifacts, receipts, activity and agent performance. Usage estimates and missing prices are identified explicitly.
+- Keep live-load and first-attempt metrics queries bounded by existing indexes as attempt history grows.
+- Install the Windows desktop package with bundled Python. Successful branch builds publish current-source installers with source, checksum and asset manifests.
+- Follow the updated [README](../README.md), [Workbench tutorial](guides/workbench.md), [feature delivery guide](guides/feature-delivery.md), [architecture](guides/architecture.md) and [current screenshots](guides/screenshots/feature-showcase.md).
 
-## What's in V1
+## Upgrade
 
-- A terminal CLI and local browser app for connecting providers and running tasks.
-- Companion mode for tasks delegated by your host assistant, and Sovereign mode for routing supported client traffic.
-- Saved task plans, model performance evidence, checked edits, recovery and execution receipts.
-- Skills, reusable presets, offline suggestions and local recipe evidence.
-- Savings estimates and redacted logs linked to task traces.
+Stop active work before upgrading. Existing local state migrates to SQLite schema 9 with a verified backup. Older binaries must not open upgraded state; restoring a backup loses later database changes and does not undo repository edits. See [upgrade notes](UPGRADE_NOTES.md).
 
-## Getting started
+The CLI names `accs`, `accension` and `router`, Python module `local_ai_router`, and MCP name `local-ai-router` remain supported. Local implementation prompts and task notes remain Git-ignored.
 
-Install from the reviewed source checkout, run `accs init`, connect a model, and open `accs ui` or use the CLI. Follow the [quick start](../README.md#install-and-start-in-the-terminal). A PyPI publication is not assumed.
+## Evidence and limits
 
-## Security
-
-Provider keys stay in a local credential store or environment references. Repository changes use registered roots, hash checks and trusted validation commands. Skills cannot grant tools or relax privacy or budgets. Contributions require automated checks and maintainer review. Read the [security policy](../SECURITY.md).
-
-## Known limitations
-
-Validation and third-party provider plugins execute trusted code; they are not sandboxes. Secret scanning and redaction are imperfect. Savings are estimates, not invoices. Model/skill outcomes are observations, not causal proof. Skill search is lexical; embedding search is not included. Provider behavior varies and only mocked calls run in normal CI. Review logs before sharing them.
-
-## How to contribute
-
-Open a PR with a clear explanation and tests. The owner reviews contributor changes after CI passes. See [Contributing](../CONTRIBUTING.md). Report vulnerabilities privately through GitHub, not public issues.
+README screenshots use deterministic mock inference in an isolated repository with real local tests. They are not production benchmarks or measured provider savings. Paid providers and physical-device certificate onboarding need validation in the intended environment. Windows installers are unsigned; verify their manifest and checksum.

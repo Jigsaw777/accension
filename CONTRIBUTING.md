@@ -30,3 +30,7 @@ Provider contributions should use [the SDK](docs/PLUGIN_SDK.md) and [example pac
 Never commit local configuration, databases, vault files, personal paths, auth caches, private fixtures or generated plans. Secret scanning is heuristic; inspect the diff too. Document untested platforms and protocols honestly. Security reports follow [SECURITY.md](SECURITY.md). Contributions use Apache-2.0 and preserve third-party notices.
 
 Compiler changes must preserve AXIR validation, privacy/egress intersection, registered checks, stale hashes and receipt integrity. Accounting tests should cover missing facts, retries, negative savings, cache/local token distinctions, frozen prices, failure isolation and restart persistence. Keep header queries indexed and use mock scale fixtures. Browser changes need keyboard, narrow-screen and light/dark checks; screenshot fixtures must be labeled mock.
+
+## Workbench checks
+
+Install `.[test,dev,browser,lan]`, then `python -m playwright install chromium`. Run `scripts/check_local.py` for existing gates plus all three bundled JavaScript syntax checks; Node is development-only. Workbench tests use disposable homes/repositories, mock providers and verified loopback TLS fixtures. Retain the 80% project coverage floor, mandatory browser/security/package jobs and OS/Python matrix. Run `scripts/check_wheel.py` for an independent clean installation including Workbench assets/templates and no-inference CLI smoke. Never run demos against live credentials or router databases.

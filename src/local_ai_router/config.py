@@ -224,6 +224,45 @@ class Discovery(Strict):
     probe_timeout: float = Field(default=0.5, gt=0, le=10)
 
 
+class WorkbenchLAN(Strict):
+    enabled: bool = False
+    bind: str = "127.0.0.1"
+    port: int = Field(default=8766, ge=1024, le=65535)
+    certificate: str = ""
+    private_key: str = ""
+    origins: list[str] = Field(default_factory=list, max_length=20)
+    workspaces: list[str] = Field(default_factory=list, max_length=100)
+
+    @model_validator(mode="after")
+    def exact_origins(self):
+        import ipaddress
+        from urllib.parse import urlsplit
+
+        ipaddress.ip_address(self.bind)
+        for origin in self.origins:
+            value = urlsplit(origin)
+            if (
+                value.scheme != "https"
+                or not value.hostname
+                or value.username
+                or value.password
+                or value.path
+                or value.query
+                or value.fragment
+                or "*" in origin
+                or (value.port or 443) != self.port
+            ):
+                raise ValueError("LAN origins must be exact HTTPS host and configured port")
+        if self.enabled and (not self.certificate or not self.private_key or not self.origins or not self.workspaces):
+            raise ValueError("Enabled LAN requires TLS files, exact origins and workspace IDs")
+        from uuid import UUID
+
+        for value in self.workspaces:
+            if str(UUID(value)) != value:
+                raise ValueError("LAN workspace requires canonical UUID")
+        return self
+
+
 class Settings(Strict):
     # Runtime discovery updates providers and models together; management writes
     # validate a complete replacement Settings before committing it.
@@ -244,6 +283,7 @@ class Settings(Strict):
     log_level: Literal["ERROR", "WARNING", "INFO", "DEBUG"] = "INFO"
     log_max_bytes: int = Field(default=10_000_000, ge=1024)
     log_backups: int = Field(default=5, ge=1, le=20)
+    workbench_diagnostic_days: int | None = Field(default=None, ge=1, le=3650)
     tool_registry: dict[str, dict] = {}
     discovery: Discovery = Field(default_factory=Discovery)
     mock: bool = False
@@ -259,6 +299,7 @@ class Settings(Strict):
     runtime: Runtime = Field(default_factory=Runtime)
     privacy: EgressBudget = Field(default_factory=EgressBudget)
     savings: Savings = Field(default_factory=Savings)
+    workbench_lan: WorkbenchLAN = Field(default_factory=WorkbenchLAN)
 
     @model_validator(mode="before")
     @classmethod
@@ -281,6 +322,16 @@ class Settings(Strict):
         for model in self.models:
             if model.provider not in self.providers:
                 raise ValueError("Unknown provider for " + model.id)
+            provider = self.providers[model.provider]
+            if provider.kind == "connector" and (
+                {"repairer" if role == "repair" else role for role in model.roles}
+                - {"repairer" if role == "repair" else role for role in provider.connector.roles}
+                or not model.supports_code
+                or model.supports_streaming
+            ):
+                raise ValueError(
+                    "Connector models require explicit supported executor/repair roles, code and no streaming"
+                )
         for provider in self.providers.values():
             validate_endpoint(provider, self.port)
         for endpoint in self.discovery.local_endpoints.values():

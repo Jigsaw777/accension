@@ -2,9 +2,26 @@ import importlib.util
 import json
 import os
 import tomllib
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
+
+
+def test_workbench_assets_and_templates_are_package_resources():
+    root = files("local_ai_router")
+    for name in (
+        "workbench.html",
+        "workbench.js",
+        "workbench.css",
+        "workbench-lan.html",
+        "workbench-lan.js",
+        "logo.svg",
+    ):
+        assert root.joinpath("static", name).read_text(encoding="utf-8").strip()
+    from local_ai_router.workbench.templates import builtins
+
+    assert {template.kind for template in builtins()} == {"prd", "work_item"}
 
 
 def installer(monkeypatch, tmp_path):

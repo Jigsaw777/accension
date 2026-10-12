@@ -1,5 +1,6 @@
 """Build the wheel and run CLI smoke checks in a fresh environment outside source."""
 
+import ast
 import json
 import os
 import subprocess
@@ -19,6 +20,13 @@ def run(argv, cwd, env=None):
 
 
 def main():
+    metadata = ast.parse((ROOT / "src/local_ai_router/__init__.py").read_text(encoding="utf-8"))
+    expected_version = next(
+        ast.literal_eval(node.value)
+        for node in metadata.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets)
+    )
     run([sys.executable, "-m", "build", "--wheel"], ROOT)
     wheels = sorted((ROOT / "dist").glob("accension-*.whl"), key=lambda p: p.stat().st_mtime)
     if not wheels:
@@ -33,7 +41,7 @@ def main():
         run([str(python), "-m", "pip", "install", str(wheels[-1])], base, env)
         run([str(cli), "--help"], base, env)
         version = json.loads(run([str(cli), "version", "--json"], base, env))
-        if version["version"] != "1.0.0":
+        if version["version"] != expected_version:
             raise RuntimeError("Wheel reports an unexpected public version")
         doctor = json.loads(run([str(cli), "doctor", "--mock", "--json"], base, env))
         if doctor["database"] != "ok" or not doctor["logging"]["writable"]:
@@ -41,7 +49,43 @@ def main():
         for family in ("skill", "preset"):
             run([str(cli), family, "list", "--mock", "--json"], base, env)
         run([str(cli), "logs", "--json"], base, env)
-    print("PASS: wheel build, clean installation, help, version, mock doctor, skills, presets and logs")
+        run(
+            [
+                str(python),
+                "-c",
+                "from importlib.resources import files; from local_ai_router.workbench.templates import builtins; r=files('local_ai_router'); assert all(r.joinpath('static',n).read_bytes() for n in ('workbench.html','workbench.js','workbench.css','workbench-lan.html','workbench-lan.js')); assert len(builtins())==2",
+            ],
+            base,
+            env,
+        )
+        smoke = """
+import asyncio
+from pathlib import Path
+import httpx
+from local_ai_router.app import create_app
+from local_ai_router.config import load
+from local_ai_router.engine import Engine
+from local_ai_router.cli_parser import parser
+from local_ai_router.db_migrations import SUPPORTED_VERSION
+from local_ai_router.workbench.cli import dispatch
+from local_ai_router.workbench.client import WorkbenchClient
+async def main():
+    engine = Engine(load(Path('home'), mock=True))
+    app = create_app(engine.settings, engine)
+    try:
+        client = WorkbenchClient(engine.settings, transport=httpx.ASGITransport(app=app))
+        result = await dispatch(parser().parse_args(['workspace','list','--json']), engine.settings, client=client)
+        assert result['items'] and engine.store.db.execute('PRAGMA user_version').fetchone()[0] == SUPPORTED_VERSION
+        assert engine.store.costs()['calls'] == 0
+    finally:
+        await app.state.workbench.close()
+        await engine.close()
+asyncio.run(main())
+"""
+        run([str(python), "-c", smoke], base, env)
+    print(
+        "PASS: wheel build, clean installation, help, version, mock doctor, skills, presets, logs and Workbench resources"
+    )
 
 
 if __name__ == "__main__":

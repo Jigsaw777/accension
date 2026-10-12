@@ -9,13 +9,13 @@
     "reason": "Operator-configured credential command runs as argv without a shell, with a 15-second timeout. Output is never logged. Treat configuration as trusted code."
   },
   {
-    "id": "5050b48e054fae3872f4ac212bf7465e3d20793b23a645ab1097148efd2e6920",
+    "id": "8ba13fe7a3970f56ea11c50fb78a4394cf85ade5fea72171ae6937d5a10ac5c3",
     "file": "src/local_ai_router/cli.py",
     "categories": [
       "network-listener"
     ],
     "count": 1,
-    "reason": "Server settings validate loopback hosts; enrollment is fixed to 127.0.0.1. Access logging is disabled to avoid leaking local authentication URLs."
+    "reason": "Reviewed loopback-only validated server, proxy headers and access logs disabled. Ten-second HTTP graceful drain bounds lingering SSE; Workbench lifespan still validates execution cleanup and removes the owner marker only on completion."
   },
   {
     "id": "5fee56db78b4c617ec13314151d7891ad65e58eed4b49edf2ca20a56059eda2f",
@@ -214,5 +214,112 @@
     ],
     "count": 1,
     "reason": "Runs a pinned checksum-verified Gitleaks binary with argv, bounded timeouts and complete redaction. Only sanitized category/path/commit metadata leaves the report."
+  },
+  {
+    "id": "e0e94a2d41b5ca65b457daa7479f785af80990417196bada1d4966512a1267bd",
+    "file": "src/local_ai_router/workbench/execution.py",
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "EngineAgentAdapter.bind compiles an approved single-node plan through registered repository paths, current fingerprint, frozen skills and ownership guards. Method-name false positive; it opens no listener."
+  },
+  {
+    "id": "c8a51f2f88678588c4f9e16d3279668dc7562fc0108dc7f0370917603149ae07",
+    "reason": "Reviewed WB22 disposable demo: constant git init argv, fresh caller-created temporary root, no shell, captured output, hidden Windows process; never opens live repository."
+  },
+  {
+    "id": "0a5c60e5435f4e8434f92aafab80947ce32f87fec5d13ec39b6ab00d69789d4b",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 101,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "a3dfcb0823057cdfa060e2ea423226ea69b2378e60a767259b65819c5f14141e",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 107,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "cf0fa18ad9049e3c8ace26f66ab935cf144d0e8da783789232c5457497d3076c",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 108,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "88c193fee68cb2d4b0d08ef8374942b3ed15577665522451bd425d179ba4793a",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 110,
+    "categories": [
+      "network-listener"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "727c924d07d5758ccfc70f16e35e8fdf3dafadf05382352e0e139cf020231133",
+    "file": "src/local_ai_router/workbench/lan.py",
+    "line": 120,
+    "categories": [
+      "cfg.load"
+    ],
+    "count": 1,
+    "reason": "Reviewed WB23 explicit opt-in listener: exact configured numeric interface/port, verified TLS cert/key/SAN, distinct minimal app, proxy headers off, loopback-owned lifecycle; cfg.load constructs only Uvicorn config."
+  },
+  {
+    "id": "fca35897977d994b795e900eed103a48cc9449f164a3fde3c2b0910b612219df",
+    "file": "scripts/check_local.py",
+    "categories": [
+      "subprocess.run"
+    ],
+    "count": 1,
+    "reason": "WB31 contributor-only Node syntax check: installed Node path, fixed bundled filenames, argv without shell. No imported data or production execution."
+  },
+  {
+    "id": "602fc51622850caa68d6111acba2b8c2b31403d5daa17f601a75904dcf2295fa",
+    "file": "scripts/build_windows_installer.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed contributor Windows packaging: fixed build/pip/bundled-import/Inno argv, explicit local compiler, shell disabled, check=True and 600-second timeout; no task/model input or user profile execution."
+  },
+  {
+    "id": "c00c8681d16af62ef09afb5cc54e1f86c8596df03e4636e52fd937bfa5b61d71",
+    "file": "scripts/build_windows_installer.py",
+    "categories": ["subprocess.check_output"],
+    "count": 1,
+    "reason": "Reviewed read-only provenance: fixed git rev-parse HEAD argv in known repository with 10-second timeout; no shell or imported task input."
+  },
+  {
+    "id": "8d52559e1fa3eac2aee76ac97196a0022471e685e1dd8d3f41083a1f82b66460",
+    "file": "scripts/smoke_windows_installer.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed smoke-test socket: short-lived ephemeral loopback port selection, never accepts traffic; isolated disposable profile."
+  },
+  {
+    "id": "a4540bc890c2c586857fb31748094622bc52ca43afa4b608b30769ab52f05133",
+    "file": "scripts/smoke_windows_installer.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed smoke-test bind to hard-coded 127.0.0.1 port zero for isolated installed hub; socket closes immediately, no external interface or user configuration."
+  },
+  {
+    "id": "c3df2eb54d45b07136c35f8b0ac2d8c4df1970378c014d54e82b2f2efd57dd37",
+    "file": "scripts/smoke_windows_installer.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed explicit developer/CI installer smoke: checksum-verified build, bundled launcher and uninstaller, fixed argv without shell, hidden window and 180-second timeout; fresh home/install path, no production registry registration or provider inference."
   }
 ]

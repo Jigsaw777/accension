@@ -27,14 +27,20 @@ def status(settings):
 
 
 def stop(settings):
-    if not status(settings)["running"]:
+    running = status(settings)["running"]
+    marker = settings.state / "server.pid"
+    if not running and not marker.exists():
         return {"status": "stopped", "running": False}
-    with httpx.Client(trust_env=False, follow_redirects=False, timeout=3) as client:
-        response = client.post(url(settings) + "/router/stop", headers={"Authorization": "Bearer " + settings.token})
-        response.raise_for_status()
-    for _ in range(100):
+    if running:
+        with httpx.Client(trust_env=False, follow_redirects=False, timeout=3) as client:
+            response = client.post(
+                url(settings) + "/router/stop", headers={"Authorization": "Bearer " + settings.token}
+            )
+            response.raise_for_status()
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
         time.sleep(0.1)
-        if not status(settings)["running"]:
+        if not status(settings)["running"] and not marker.exists():
             return {"status": "stopped", "running": False}
     raise RuntimeError("Service is still draining work; check accs status before restarting")
 

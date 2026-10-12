@@ -86,6 +86,10 @@ class RoleResolver:
             m = self.priced(original) if original.provider in self.settings.providers else original
             provider = self.settings.providers.get(m.provider)
             reasons = []
+            from .contracts import execution_allowed
+
+            if not execution_allowed(m, role):
+                reasons.append("EXECUTION_ROLE_DENIED")
             quality = self.store.quality(m, decision.task_family)
             dimension = ROLE_DIMENSIONS.get(policy_role)
             if dimension in m.quality:
@@ -114,6 +118,8 @@ class RoleResolver:
                 permitted = base_role in m.roles
             if not permitted:
                 reasons.append("ROLE_NOT_ALLOWED")
+            if provider and provider.kind == "connector" and base_role not in provider.connector.roles:
+                reasons.append("CONNECTOR_ROLE_UNSUPPORTED")
             # Tier bounds only serve V1 callers, never automatic role assignment.
             if not min_tier <= m.tier <= max_tier:
                 reasons.append("LEGACY_TIER_BOUND")
@@ -237,6 +243,11 @@ class RoleResolver:
         pinned = policy.model
         if pinned and policy.strategy in {"preferred", "pinned"}:
             eligible.sort(key=lambda item: item[0].id != pinned)
+        from .contracts import model_order
+
+        order = model_order(role)
+        if order is not None:
+            eligible.sort(key=lambda item: order.index(item[0].id))
         notice = None
         if pinned and not any(item[0].id == pinned for item in eligible):
             notice = "Pinned model unavailable. " + (

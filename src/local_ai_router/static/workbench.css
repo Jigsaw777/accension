@@ -1,0 +1,102 @@
+/* Accension's palette, typography and theme preference come from style.css. */
+.workbench main { min-width: 0; }
+.workbench header { flex-wrap: wrap; }
+.workbench .breadcrumb { margin: 8px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.workbench #connection { margin: 0; border-color: var(--line); }
+.workbench #navigation button {
+  width: 100%; margin: 0; padding: 9px 12px; min-height: 40px;
+  text-align: left; background: transparent; color: var(--muted);
+}
+.workbench #navigation button:hover,
+.workbench #navigation button[aria-current="page"] { background: var(--soft); color: var(--green); }
+.workbench #navigation button[aria-current="page"] { box-shadow: inset 3px 0 var(--green); }
+.workbench .skip-link {
+  position: fixed; top: -100px; left: 16px; z-index: 20;
+  padding: 10px 16px; background: var(--surface);
+  border: 1px solid var(--green); border-radius: 7px;
+}
+.workbench .skip-link:focus { top: 12px; }
+.workbench .filters {
+  display: flex; gap: 16px; align-items: end; flex-wrap: wrap;
+  padding: 14px 18px; margin-bottom: 24px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+}
+.workbench .filters label { flex: 1 1 180px; max-width: 300px; min-width: 0; margin: 0; }
+.workbench .filters button { margin: 0; }
+.workbench input, .workbench select, .workbench textarea { border-color: var(--line); }
+.workbench button:disabled { cursor: not-allowed; }
+.workbench button { overflow-wrap: anywhere; }
+.workbench #notice:empty { display: none; }
+.workbench .board {
+  display: grid; grid-template-columns: repeat(7, minmax(200px, 1fr)); gap: 12px;
+  overflow-x: auto; padding: 4px 3px 16px; margin: 14px -3px 24px;
+}
+.workbench .column {
+  min-width: 0; min-height: 220px; background: var(--soft);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px;
+}
+.workbench .column > h3 {
+  color: var(--muted); font-size: 11px; letter-spacing: 0.7px; overflow-wrap: anywhere;
+}
+.workbench .column[data-state="RUNNING"],
+.workbench .column[data-state="REVIEW"] { border-top-color: var(--green); }
+.workbench .card { margin: 12px 0 0; padding: 14px; border-radius: 8px; overflow-wrap: anywhere; }
+.workbench .card button {
+  display: block; width: 100%; text-align: left; margin: 6px 0; padding: 4px 0;
+  background: transparent; color: var(--ink); line-height: 1.5;
+}
+.workbench .card button:hover { color: var(--green); text-decoration: underline; }
+.workbench .meta { font-size: 11px; color: var(--muted); }
+.workbench .card p { margin: 8px 0 0; }
+.workbench .exceptional {
+  margin: 12px 0 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;
+}
+.workbench .exceptional .column { min-height: 130px; }
+.workbench .editor, .workbench #pairing {
+  display: grid; gap: 10px; background: var(--surface); padding: 24px;
+  border: 1px solid var(--line); border-radius: 12px; margin: 18px 0;
+  max-width: 900px; overflow-wrap: anywhere;
+}
+.workbench .editor label { display: grid; gap: 4px; margin: 0; min-width: 0; }
+.workbench .editor textarea { min-height: 90px; }
+.workbench .actions, .workbench .remote-actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.workbench .board-toolbar input { width: min(280px, 100%); margin: 0; }
+.workbench .record { border-bottom: 1px solid var(--line); padding: 12px 0; overflow-wrap: anywhere; }
+.workbench .mobile-state { display: none; }
+.workbench .item-list { display: block; overflow: visible; min-height: 0; }
+.workbench .item-list .column { min-height: 0; margin: 10px 0; }
+.workbench .filters input, .workbench .board-toolbar select { max-width: 100%; }
+.workbench pre { max-height: 400px; }
+.workbench #detail { scroll-margin-top: 140px; }
+.workbench #detail:not(:empty) { border-top: 2px solid var(--line); margin-top: 24px; padding-top: 18px; }
+.workbench #detail { overflow-wrap: anywhere; }
+.workbench summary { padding: 6px; }
+.workbench fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; padding: 12px; }
+.workbench legend { color: var(--ink); font-weight: 600; }
+.workbench fieldset input, .workbench fieldset textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+.workbench fieldset button, .workbench legend { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.workbench svg { display: block; width: 100%; max-width: 600px; height: auto; }
+.workbench table { width: 100%; table-layout: fixed; overflow-wrap: anywhere; }
+.workbench th, .workbench td { padding: 6px; text-align: left; }
+@media (max-width: 850px) {
+  .workbench #navigation { display: flex; flex-wrap: wrap; overflow: visible; }
+  .workbench #navigation button { width: auto; white-space: nowrap; flex-shrink: 0; }
+  .workbench header { position: static; }
+  .workbench .exceptional { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workbench #detail { scroll-margin-top: 16px; }
+}
+@media (max-width: 480px) {
+  .workbench .board, .workbench .exceptional { display: block; margin: 12px 0; padding: 0; }
+  .workbench .column { margin: 10px 0; min-height: 160px; }
+  .workbench .mobile-state { display: block; width: 100%; margin: 12px 0; }
+  .workbench .column.mobile-hidden { display: none; }
+  .workbench .board + h3 { display: none; }
+  .workbench .filters { gap: 10px; padding: 14px; }
+  .workbench .filters label { max-width: 100%; }
+  .workbench .editor, .workbench #pairing { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workbench * { scroll-behavior: auto !important; }
+}

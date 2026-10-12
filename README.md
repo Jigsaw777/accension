@@ -1,11 +1,15 @@
 # Accension
 
+<img src="src/local_ai_router/static/logo.svg" width="64" height="64" alt="Accension logo">
+
 [![CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
 [![CodeQL in CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg?label=CodeQL)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
 **Accension helps your AI models work together.** It chooses a model for each task, controls spending, checks code changes and keeps a record of the result.
+
+**Version 1.1.0** adds a persistent Workbench for PRDs, dependent tasks, approved feature execution, human completion review and agent performance. See the [release notes](docs/RELEASE_NOTES.md) and [upgrade guide](docs/UPGRADE_NOTES.md).
 
 Accension is open source and runs on your computer. You only pay cloud AI providers if you choose to use them. Local models have no API-token charges, though running them still uses your hardware and electricity.
 
@@ -15,7 +19,17 @@ Use it from a terminal, a local browser app, or a connected assistant such as Co
 
 Keep local and cloud models in one place. Choose privacy and spending limits. Let Accension route eligible work to models that fit those limits, then inspect its checks and recorded costs. Savings depend on the task and models; extra planning or repair work can cost more.
 
-[Install](#install-and-start-in-the-terminal) · [CLI commands and help](#cli-commands-and-help) · [Modes](#companion-and-sovereign-modes) · [Savings](#savings-pulse) · [Developer install](#developer-install) · [Guides](#guides)
+[Windows desktop](#install-and-start-on-windows) · [Terminal install](#install-and-start-in-the-terminal) · [Local app](#use-the-local-app) · [Workbench tutorial](#workbench) · [Architecture](#architecture) · [CLI reference](#cli-commands-and-help) · [Guides](#guides)
+
+## Install and start on Windows
+
+1. Download the [latest main Windows installer](https://github.com/Jigsaw777/accension/releases/download/windows-main/Accension-latest-windows-x64.exe), or use `dist/windows/Accension-latest-windows-x64.exe` built from your checkout.
+2. Run the installer and complete setup. Python is bundled; a separate Python installation is not required.
+3. Open **Accension** from the Start menu or desktop shortcut. It starts the local service and opens Workbench in your browser at `http://127.0.0.1:8765/ui/workbench`.
+4. Choose **Accension settings** in the sidebar to connect models, register a repository and configure checks. Choose **Open Workbench** to return to your projects.
+5. Follow the [Workbench tutorial below](#workbench) to create your first project and review a feature before execution.
+
+The download contains the latest successfully published build from `main`. It does not include unmerged branch changes, and an existing installation is updated by running a newer installer. For a development checkout, rebuild the installer before installing that checkout's UI. See the [Windows tutorial](docs/guides/windows.md) and [installer build guide](installer/windows/README.md) for build commands, locations, upgrades and troubleshooting.
 
 ## Install and start in the terminal
 
@@ -49,10 +63,34 @@ accs run "Add a greeting feature with tests" --repo . --budget 0.25 --max-cloud-
 
 ## Use the local app
 
-`accs ui` opens the local app at **http://127.0.0.1:8765/ui**. No Accension account is needed. Browser sessions and API clients have separate local security checks. The service only listens on this computer. See [Security](SECURITY.md) for details.
+After a terminal installation, start the service and open the GUI:
 
 ```sh
 accs start --background
+accs ui
+```
+
+`accs ui` opens model setup at **http://127.0.0.1:8765/ui**. Choose **Open Workbench**, or run `accs workbench open`, to open projects at **http://127.0.0.1:8765/ui/workbench**. The Windows shortcut opens Workbench directly.
+
+No Accension account is needed. The default service listens only on this computer. Browser sessions and API clients have separate local security checks; see [Security](SECURITY.md).
+
+### Connect models and prepare a repository
+
+1. **Setup / Providers:** discover local models or connect a provider you already use. Accension does not download a model for you.
+2. **Models:** inspect capabilities and eligibility, supply missing prices and review calibration quotes before any paid run.
+3. **Routing:** choose **Balanced** or **Fully Local** and set the privacy policy appropriate for your repository.
+4. **Repositories:** register the repository root and trusted test/build commands. Install that project's dependencies before running those checks.
+5. **Integrations:** optionally connect Codex, Claude or another supported client. Workbench also works directly from the local app.
+
+![Current Accension model setup, showing provider connection, calibration and routing steps in a demo workspace](docs/guides/screenshots/routing-overview-dark-desktop.png)
+
+*Current setup screen, captured from this checkout on 12 October 2026. All screenshots below use an isolated demo workspace and deterministic mock inference. Model usage and costs shown are demonstration data.*
+
+Routing and Workbench are **two linked views of one application**. They share the Engine, configuration, database, logo and theme. Use **Accension settings** to move from Workbench to model management and **Open Workbench** to return. No YAML or Node.js is required for this GUI flow. A model remains ineligible until its capability, quality, privacy and price requirements are met.
+
+To manage the service:
+
+```sh
 accs status
 accs restart
 accs stop
@@ -61,19 +99,95 @@ accs serve
 
 The background hub needs no administrator rights and installs no autostart. `serve` runs it in the terminal. `ui --no-browser` supports manual opening.
 
-1. **Setup:** discover local models or connect a cloud provider.
-2. **Models:** select models, enter missing prices and preview calibration.
-3. **Routing:** choose Balanced or Fully Local.
-4. **Repositories:** register a root and trusted test/build commands.
-5. **Integrations:** preview and install a Codex or Claude connection.
+## Workbench
 
-The UI also includes Skills, Presets, Logs, task execution, receipts, model evidence and a Savings Pulse header. Light, dark and system themes are available.
+Workbench takes a feature from an idea through a product requirements document (PRD), dependent work items, approved execution and completion review. Projects, revisions, attempts, checks and receipts persist locally. Browsing the board makes no inference calls; generation, decomposition and execution can invoke configured models.
 
-![Accension local control plane, mock demonstration](docs/screenshots/overview.jpg)
+### 1. Create a project
 
-Screenshots use a clearly marked mock workspace. Amounts illustrate configured demo prices and deterministic fixtures, not production savings. [Screenshot gallery](docs/screenshots/README.md).
+Open **Projects**, enter a project name and a short ticket prefix such as `WEB`, select the registered repository, and save. Select the project in the **Project** filter before creating a PRD or work item. The prefix becomes the stable ticket key, for example `WEB-1`.
 
-No YAML or Node.js is needed for this flow. A model remains ineligible until its capability, quality, privacy and price requirements are met.
+### 2. Write or generate a PRD
+
+1. Open **PRDs → Create PRD** to write the document yourself, or **Generate PRD** to start from a rough idea.
+2. For generation, enter the requirement, constraints, privacy policy and budget; choose automatic routing or an eligible planner model.
+3. Choose **Quote inference**, inspect the quote, then **Save** to confirm generation. The result is a draft, not execution approval.
+4. Review the problem, scope, requirements and acceptance criteria. Structured entries use an ID and text; give each requirement a distinct ID such as `R1`.
+5. Save your edits, reopen the PRD, choose **submit review**, then reopen it to approve the reviewed revision. Changes to an approved document require reviewing the new revision.
+
+![Current PRD editor with structured requirement IDs and text in the light theme](docs/guides/screenshots/feature-prd-light-desktop.png)
+
+*The PRD editor keeps requirements as structured, versioned entries. This screenshot shows a manually authored demo draft; it is not a generated provider response.*
+
+### 3. Break the feature into work items
+
+Open the approved PRD and choose **Decompose approved PRD**. Enter the allowed repository paths, choose a planner, and review **Quote inference** before confirming with **Save**. Inspect the proposed tasks, requirement coverage, checks and dependencies, then choose **Import selected tasks**. Imported tasks start in **BACKLOG**.
+
+Open **Board** to inspect each ticket's objective, acceptance criteria, allowed paths, artifacts and registered validation. You can also use **Create work item** for a manual task. Dependencies must complete before downstream work can proceed.
+
+![Current Workbench board with a greeting feature, a ready task, a task awaiting review and completed dependent tasks](docs/guides/screenshots/feature-board-dark-desktop.png)
+
+*The desktop board scrolls horizontally; this view shows the later workflow columns. On a narrow screen, use **Visible board state** to choose a column. [View the current mobile screenshot](docs/guides/screenshots/feature-board-dark-mobile.png).*
+
+### 4. Configure an agent and review execution
+
+1. Open **Agents → Create agent** and configure an Engine worker with access to the workspace and repository. Choose automatic or pinned models for its supported roles and set worker capacity.
+2. Return to the approved PRD and choose **Review imported feature**. Review the selected tasks, agents, model policy, allowed paths and registered checks.
+3. Enter **Feature maximum USD** and choose **Preview feature execution**. Resolve displayed blockers and preview again after any change to the selection or budget.
+4. Choose **Start approved feature** only after reviewing the current preview. The coordinator schedules eligible tasks in dependency order within the approved scope.
+5. Open **Feature delivery** to inspect member states, spending reservations and tasks that need your review. An execution approval does not approve completion.
+
+![Feature execution review with selected tasks, agents, allowed paths, registered tests and a maximum budget](docs/guides/screenshots/feature-approval-dark-desktop.png)
+
+*This review screen shows the imported demo tasks and an editable execution allowance. It is captured before requesting a new preview or starting another batch.*
+
+For one ticket at a time, open an Engine work item, mark it ready, preview and assign an eligible agent, review its execution contract, approve execution, then choose **Run approved item**. See the [full Workbench reference](docs/guides/workbench.md).
+
+### 5. Inspect checks and approve completion
+
+Open a ticket in **REVIEW** and inspect its current evidence, changed artifacts and test results. **Runs** exposes the attempt, verification, artifacts and receipt. Enter a review reason and choose **approve_completion** or **reject_completion**. Changed or stale evidence requires a fresh review. Human completion approval is separate from PRD approval and permission to run a feature.
+
+![Completion review showing verified Engine evidence, artifact hashes, a passing registered test check and human approval controls](docs/guides/screenshots/feature-review-light-desktop.png)
+
+*The demo executed four greeting tests with exit code 0. A successful attempt stays in REVIEW until completion is approved; a model response alone cannot mark the work done.*
+
+### Inspect agent performance
+
+Open **Agents**, select an agent, then choose **Performance**. Select a 7-, 30- or 90-day period to inspect attempts, success-rate denominator, execution and queue duration, current load and usage-based cost estimates. **History** shows recorded activity and configuration changes.
+
+![Current agent performance view with four demo duration samples, queue timing, current load and usage estimates](docs/guides/screenshots/feature-agents-dark-desktop.png)
+
+*These are results from four mock attempts in a disposable repository, not a production benchmark. Unknown model usage and prices stay unknown; displayed estimates are not invoices.*
+
+The [feature delivery guide](docs/guides/feature-delivery.md) explains approval boundaries, model selection, metrics and the offline demo. The [current screenshot gallery](docs/guides/screenshots/feature-showcase.md) includes capture details and a completed delivery. To run the disposable demonstration from a developer checkout:
+
+```sh
+python scripts/demo_workbench.py --feature
+```
+
+It uses deterministic mock responses, executes real local greeting tests, records receipts and verifies persistence after reopening the database. It does not require a paid provider.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Desktop[Windows shortcut] --> Workbench[Workbench UI]
+  Browser[Local browser] --> Routing[Routing and model setup]
+  Workbench --> Hub[Local Accension hub]
+  Routing --> Hub
+  Hub --> Engine[Shared Engine]
+  Engine --> Models[Eligible local or cloud models]
+  Engine --> Checks[Bounded edits and registered checks]
+  Engine <--> Store[(Local state and receipts)]
+  Phone[Paired browser] --> LAN[Restricted HTTPS API]
+  LAN --> Hub
+```
+
+Workbench owns project and task coordination; the Engine owns model calls, bounded repository edits, registered validation and receipts. Provider selection respects privacy, eligibility and budget constraints. State, history and approvals stay in the local SQLite store. See the [detailed architecture and source map](docs/guides/architecture.md) and [feature execution architecture](docs/guides/feature-delivery.md#architecture).
+
+LAN is a separate, opt-in TLS interface. Install `.[lan]`, configure `workbench_lan` in the router home's `config/local.yaml` with a certificate, private key, exact HTTPS origins and allowed workspace IDs, then restart the daemon. Pair devices through local Workbench Settings and grant only the required capabilities. Clients must trust the certificate authority and its SAN must match the configured origin; no certificate bypass is supported. Physical-device trust onboarding and live provider spending were not verified.
+
+Workbench upgrades SQLite state to version 9 after creating a verified backup. Older binaries must not open upgraded state; downgrade requires backup restoration and loses post-backup database changes. It does not undo repository edits.
 
 ## Use skills and presets
 
@@ -133,7 +247,7 @@ accs integrate --help
 accs savings --help
 ```
 
-`--help` exits after showing accepted arguments; it does not initialize configuration, call a provider or execute a task. Command-family help also lists available actions. The installed command's help is authoritative for that version. [Captured CLI output examples](docs/EXAMPLES.md) show help, a route, Model DNA and a receipt.
+`--help` exits after showing accepted arguments; it does not initialize configuration, call a provider or execute a task. Command-family help also lists available actions. The installed command's help is authoritative for that version. [The CLI reference](docs/CLI.md) covers current commands, including Workbench operations.
 
 | Common option | Use |
 |---|---|
@@ -429,6 +543,8 @@ Start with [Contributing](CONTRIBUTING.md), run `python scripts/check_local.py`,
 
 | Topic | Documentation |
 |---|---|
+| Windows desktop | [Install/update tutorial](docs/guides/windows.md), [build guide](installer/windows/README.md) |
+| Workbench | [Project and execution tutorial](docs/guides/workbench.md), [architecture/source map](docs/guides/architecture.md), [screenshot gallery](docs/guides/screenshots/README.md) |
 | Design and routing | [Architecture](ARCHITECTURE.md), [routing policy](ROUTING_POLICY.md) |
 | Connect and configure | [Providers](PROVIDERS.md), [UI](UI.md), [configuration](CONFIGURATION.md) |
 | Trust and privacy | [Security](SECURITY.md), [privacy](PRIVACY.md) |
@@ -437,6 +553,8 @@ Start with [Contributing](CONTRIBUTING.md), run `python scripts/check_local.py`,
 | Execution compiler | [CLI](docs/CLI.md), [AXIR](docs/AXIR.md), [Model DNA](docs/MODEL_DNA.md), [receipts](docs/EXECUTION_RECEIPTS.md) |
 | Modes and accounting | [Modes](docs/MODES.md), [egress budgets](docs/EGRESS_BUDGETS.md), [Savings Pulse](docs/SAVINGS.md) |
 | Operations | [Migration](docs/UPGRADE_NOTES.md), [cache](CACHE.md), [troubleshooting](TROUBLESHOOTING.md), [contributing](CONTRIBUTING.md) |
+
+All documentation and detailed prompt handoffs live under `docs/`. The [guide index](docs/guides/README.md) covers public tutorials. Local handoffs use `docs/prompts/YYYY-MM-DD/vMAJOR.MINOR.PATCH/` and `docs/prompts/latest.json`; they stay Git-ignored and are not shipped in the installer. Runtime Workbench modules remain under `src/local_ai_router/workbench`, packaged role prompts under `src/local_ai_router/data/prompts`, and generated build outputs under `dist/`.
 
 ## Current limits
 
