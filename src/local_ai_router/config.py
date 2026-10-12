@@ -365,9 +365,13 @@ class Settings(Strict):
         return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
 
     def repository(self, path: str) -> Repository:
-        resolved = Path(path).resolve(strict=True)
+        requested = os.path.normcase(os.path.abspath(path))
         for repo in self.repositories:
-            if resolved == Path(repo.path).resolve():
+            # Resolve only configured roots; request paths never reach filesystem lookup.
+            configured = os.path.normcase(os.path.abspath(repo.path))
+            canonical = os.path.normcase(str(Path(repo.path).resolve()))
+            if requested in {configured, canonical}:
+                Path(repo.path).resolve(strict=True)
                 return repo
         raise ValueError("Repository is not registered. Use router repo add PATH first.")
 

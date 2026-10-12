@@ -78,6 +78,9 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Keep PR security gates as complete as the post-merge scan.
+      CODEQL_ACTION_OVERLAY_ANALYSIS: 'false'
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       with:

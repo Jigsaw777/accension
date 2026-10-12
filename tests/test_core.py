@@ -286,6 +286,47 @@ async def test_execution_paths_require_registered_repository(engine, repo, tmp_p
     assert (repo / ".router/plans" / (plan.plan_id + ".json")).is_file()
 
 
+def test_repository_lookup_never_resolves_request_paths(settings, repo, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    original = Path.resolve
+    resolved = []
+
+    def record(path, *args, **kwargs):
+        resolved.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", record)
+    assert settings.repository(str(repo / ".." / repo.name)) is settings.repositories[0]
+    assert settings.repository(str(repo / "nested" / "..")) is settings.repositories[0]
+    for path in (tmp_path / "unregistered", repo / "missing"):
+        with pytest.raises(ValueError, match="not registered"):
+            settings.repository(str(path))
+    assert resolved and all(path == repo for path in resolved)
+
+
+@pytest.mark.parametrize(
+    "task,architecture",
+    [
+        ("api then database", True),
+        ("database then api", False),
+        ("api\ndatabase", False),
+        ("api\rdatabase", True),
+        ("api" * 100000, False),
+    ],
+    ids=["ordered", "reversed", "newline", "carriage-return", "repeated-api"],
+)
+def test_api_database_classification_has_linear_search(task, architecture):
+    import time
+
+    from local_ai_router.decision import deterministic
+
+    started = time.perf_counter()
+    result = deterministic(task)
+    assert (result.task_family == "architecture") is architecture
+    assert time.perf_counter() - started < 1
+
+
 async def test_cache_invalidates_dirty_added_removed_files(engine, repo):
     (repo / "a.py").write_text("def f(): return 1\n")
 
