@@ -45,7 +45,7 @@ pywin32==312
 PyYAML==6.0.3
 referencing==0.37.0
 requests==2.34.2
-rpds-py==2026.6.3
+rpds-py==2026.9.1
 sse-starlette==3.5.0
 starlette==1.7.0
 typing-inspection==0.4.4
