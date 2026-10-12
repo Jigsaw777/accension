@@ -277,8 +277,9 @@
     }, 1000);
   }
   async function render() {
-    const content = $("content");
-    content.replaceChildren();
+    clearTimeout(refreshTimer);
+    const content = $("content").cloneNode(false);
+    $("content").replaceWith(content);
     $("page-title").textContent = page;
     $("project-context").textContent =
       ($("workspace").selectedOptions[0]?.textContent || "Workspace") +

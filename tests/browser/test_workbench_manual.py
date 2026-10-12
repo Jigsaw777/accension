@@ -252,3 +252,34 @@ def test_manual_comment_template_and_navigation_draft(page):
     playwright.expect(page.get_by_label("Template YAML")).to_have_value(re.compile("prd-default"))
     page.get_by_role("button", name="Preview template", exact=True).click()
     playwright.expect(page.locator("#content pre").last).to_contain_text("problem_statement")
+
+
+@pytest.mark.parametrize("action", ["refresh", "navigate"])
+def test_render_discards_delayed_settings(page, action):
+    held = []
+
+    def delay_first_setup(route):
+        if not held:
+            held.append((route, route.fetch()))
+        else:
+            route.continue_()
+
+    page.route("**/ui/workbench/api/lan/setup", delay_first_setup)
+    with page.expect_request("**/ui/workbench/api/lan/setup"):
+        page.get_by_role("button", name="Settings", exact=True).click()
+    export = page.get_by_role("button", name="Export prd-default v1", exact=True)
+    if action == "refresh":
+        page.get_by_role("button", name="Refresh", exact=True).click()
+        playwright.expect(export).to_have_count(1)
+    else:
+        page.get_by_role("button", name="Overview", exact=True).click()
+        playwright.expect(page.locator("#content")).to_contain_text("Execution dispatcher:")
+    with page.expect_response(re.compile(r"/ui/workbench/api/templates\?")):
+        held[0][0].fulfill(response=held[0][1])
+    playwright.expect(page.get_by_role("button", name="Settings", exact=True)).to_be_enabled()
+    playwright.expect(export).to_have_count(1 if action == "refresh" else 0)
+    if action == "refresh":
+        export.click()
+        playwright.expect(page.get_by_label("Template YAML")).to_have_value(re.compile("prd-default"))
+    else:
+        playwright.expect(page.locator("#content")).to_contain_text("Execution dispatcher:")
