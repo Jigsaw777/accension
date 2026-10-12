@@ -24,3 +24,7 @@ The sticky Savings Pulse header remains available on every page. Click or keyboa
 System offers system/light/dark appearance. Narrow layouts and reduced motion are supported. Mock sessions display a DEMO badge. [Screenshot gallery](docs/screenshots/README.md).
 
 Cloud calibration requires a reviewed quote and paid opt-in. No models are downloaded automatically. Credentials are masked and never read back. Save conflicts require reload; CLI and UI share Management validation. Native CLI integration preview/apply/undo supports additional Sovereign launcher options; the UI installer remains scoped MCP.
+
+## Workbench board
+
+Open `accs workbench open` or `/ui/workbench` on the running local daemon. It shows persistent projects/PRDs/items, dependencies, real agent instances, attempts/checks/receipts, history and local policy/device settings. All assets ship in the package. Offline writes are disabled; drafts remain in memory. The optional paired HTTPS page at `/` uses scoped grants and supports mobile pagination/details/review without exposing loopback administration. See [Workbench setup and trust requirements](README.md#workbench).

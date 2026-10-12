@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .dag import normalize_dag
+
 
 def uid() -> str:
     return uuid4().hex
@@ -312,24 +314,13 @@ class ExecutionPlan(Strict):
 
     @model_validator(mode="after")
     def check_dag(self):
-        ids = [t.id for t in self.tasks]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Duplicate task ids")
-        dependencies = {t.id: set(t.dependencies) for t in self.tasks}
-        for parent, child in self.dependency_edges:
-            if parent not in dependencies or child not in dependencies:
-                raise ValueError("Unknown dependency edge")
-            dependencies[child].add(parent)
-        if any(not deps <= set(ids) for deps in dependencies.values()):
-            raise ValueError("Unknown dependency")
-        pending = dict(dependencies)
-        while pending:
-            ready = {i for i, deps in pending.items() if not deps}
-            if not ready:
-                raise ValueError("Task DAG contains a cycle")
-            pending = {i: deps - ready for i, deps in pending.items() if i not in ready}
+        dependencies = normalize_dag(
+            [task.id for task in self.tasks],
+            self.dependency_edges,
+            {task.id: task.dependencies for task in self.tasks},
+        )
         for task in self.tasks:
-            task.dependencies = sorted(dependencies[task.id])
+            task.dependencies = dependencies[task.id]
         return self
 
 

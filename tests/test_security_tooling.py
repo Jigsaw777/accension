@@ -248,6 +248,9 @@ def test_workflow_all_required_checks_join_gate_and_no_fork_secrets():
     assert len(jobs["test"]["strategy"]["matrix"]["os"]) == 3
     assert "pull_request_target" not in str(ci)
     assert "secrets." not in str(ci)
+    assert any("workbench-lan.js" in step.get("run", "") for step in jobs["quality"]["steps"])
+    assert any("[test,browser,lan]" in step.get("run", "") for step in jobs["browser"]["steps"])
+    assert any("[test,lan]" in step.get("run", "") for step in jobs["test"]["steps"])
     for path in (root / ".github/workflows").glob("*.yml"):
         workflow = yaml.safe_load(path.read_text())
         assert workflow["permissions"] == {"contents": "read"}

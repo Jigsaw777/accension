@@ -19,6 +19,12 @@ def output(value, json_output=False):
 
 
 async def dispatch(args, settings):
+    from .workbench.cli import NOUNS
+
+    if args.command in NOUNS:
+        from .workbench.cli import dispatch as workbench_dispatch
+
+        return await workbench_dispatch(args, settings)
     engine = Engine(settings)
     try:
         from .management import Management
@@ -276,12 +282,15 @@ def main(argv=None):
                     access_log=False,
                     log_level="warning",
                     proxy_headers=False,
+                    timeout_graceful_shutdown=10,
                 )
             )
             app.state.server = server
             (settings.state / "server.pid").write_text(str(os.getpid()))
             try:
-                server.run()
+                from .workbench.lan import serve_pair
+
+                asyncio.run(serve_pair(server, app.state.workbench))
             finally:
                 (settings.state / "server.pid").unlink(missing_ok=True)
         elif args.command == "mcp":

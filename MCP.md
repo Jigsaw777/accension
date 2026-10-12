@@ -55,3 +55,7 @@ Task calls are awaited requests, not a distributed job scheduler. CLI execution 
 OpenAI Chat/Responses and Anthropic Messages stay on a fast compatible forwarding path, preserving supported tools/SSE. Gateway requests do not automatically compile AXIR. Eligible downstream protocols are required; there is no universal Bedrock/Gemini translation.
 
 MCP delegation and gateway transport are distinct. Downstream HTTP carries X-Local-Router-Hop; reentry and self-pointing endpoints are rejected. External MCP workers must not recursively invoke the orchestrator. Do not delegate Accension's own implementation to itself.
+
+## Workbench tools
+
+Workbench MCP tools are thin clients of the same daemon: workspace/project/PRD/item CRUD, templates, planning/import/reconciliation, assignment, attempt/artifact/evidence reads, cancellation and recovery. Use workspace UUIDs and mutation command/revision IDs. The stdio client does not create a second Workbench engine or scheduler. MCP is machine authority and cannot approve PRDs, execution grants or human completion. Perform those actions through the local UI/operator CLI. The LAN listener never exposes `/mcp`. See [Workbench setup](README.md#workbench), `accs workbench --help` and the MCP tool schemas for request fields.

@@ -1,5 +1,7 @@
 # Accension
 
+<img src="src/local_ai_router/static/logo.svg" width="64" height="64" alt="Accension logo">
+
 [![CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
 [![CodeQL in CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg?label=CodeQL)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
@@ -18,6 +20,8 @@ Keep local and cloud models in one place. Choose privacy and spending limits. Le
 [Install](#install-and-start-in-the-terminal) · [CLI commands and help](#cli-commands-and-help) · [Modes](#companion-and-sovereign-modes) · [Savings](#savings-pulse) · [Developer install](#developer-install) · [Guides](#guides)
 
 ## Install and start in the terminal
+
+Windows desktop users can download the [latest main Windows build](https://github.com/Jigsaw777/accension/releases/download/windows-main/Accension-latest-windows-x64.exe), or run `dist/windows/Accension-latest-windows-x64.exe` after building this checkout, then open **Accension** from the Start menu. Python is bundled. Branch downloads become available after the Windows workflow is merged and completes successfully. See the [Windows tutorial](guides/windows.md) and [installer build guide](installer/windows/README.md).
 
 Requires Python 3.11+. From a downloaded source checkout on Windows, Linux or macOS, choose one:
 
@@ -50,6 +54,25 @@ accs run "Add a greeting feature with tests" --repo . --budget 0.25 --max-cloud-
 ## Use the local app
 
 `accs ui` opens the local app at **http://127.0.0.1:8765/ui**. No Accension account is needed. Browser sessions and API clients have separate local security checks. The service only listens on this computer. See [Security](SECURITY.md) for details.
+
+Routing and provider management live at `/ui`; projects and work items live at `/ui/workbench`. They are linked pages in one application, with one Engine, configuration and database. The desktop shortcut opens Workbench; **Accension settings** opens model routing, and **Open Workbench** returns to the board.
+
+Follow [your first Workbench project](guides/workbench.md). See the [detailed architecture and source map](guides/architecture.md) for interfaces, execution ownership, storage, security and version boundaries.
+
+![Accension Workbench board, synthetic demonstration](guides/screenshots/workbench-dark-desktop.png)
+
+The board uses the shared Accension logo, sidebar and appearance. [Desktop and phone screenshots in both themes](guides/screenshots/README.md) use synthetic data and no live inference.
+
+```mermaid
+flowchart LR
+  Desktop[Windows shortcut] --> Hub[Local Accension hub]
+  Settings[Routing UI] --> Hub
+  Workbench[Workbench UI] --> Hub
+  Hub --> Engine[Shared Engine and checks]
+  Engine <--> Store[(Local state and receipts)]
+  Phone[Paired browser] --> LAN[Restricted HTTPS API]
+  LAN --> Hub
+```
 
 ```sh
 accs start --background
@@ -429,6 +452,8 @@ Start with [Contributing](CONTRIBUTING.md), run `python scripts/check_local.py`,
 
 | Topic | Documentation |
 |---|---|
+| Windows desktop | [Install/update tutorial](guides/windows.md), [build guide](installer/windows/README.md) |
+| Workbench | [Project and execution tutorial](guides/workbench.md), [architecture/source map](guides/architecture.md), [screenshot gallery](guides/screenshots/README.md) |
 | Design and routing | [Architecture](ARCHITECTURE.md), [routing policy](ROUTING_POLICY.md) |
 | Connect and configure | [Providers](PROVIDERS.md), [UI](UI.md), [configuration](CONFIGURATION.md) |
 | Trust and privacy | [Security](SECURITY.md), [privacy](PRIVACY.md) |
@@ -438,8 +463,18 @@ Start with [Contributing](CONTRIBUTING.md), run `python scripts/check_local.py`,
 | Modes and accounting | [Modes](docs/MODES.md), [egress budgets](docs/EGRESS_BUDGETS.md), [Savings Pulse](docs/SAVINGS.md) |
 | Operations | [Migration](docs/UPGRADE_NOTES.md), [cache](CACHE.md), [troubleshooting](TROUBLESHOOTING.md), [contributing](CONTRIBUTING.md) |
 
+The [guide index](guides/README.md) separates public tutorials from private engineering handoffs. Runtime Workbench modules stay under `src/local_ai_router/workbench`; packaged role prompts stay under `src/local_ai_router/data/prompts`. Root `prompts/`, local Workbench task folders and `docs/prompts/` are ignored. Prompt handoffs use local version folders and a latest pointer; they are not shipped in the installer.
+
 ## Current limits
 
 Calibration is small-fixture evidence, not production-quality certification. Savings are counterfactual estimates, without invoice reconciliation or exact cross-vendor tokenization. Optional analytics cannot fail inference; incomplete accounting is surfaced, although a storage outage can prevent even an error marker from persisting. Repository retrieval is lexical/graph based; embedding transports are optional. Bedrock native probes are limited. Plugins, credential commands, MCP processes and validation are trusted software, not sandboxed. Resume requires a verified unfinished checkpoint; finalized runs need a fresh plan. Live paid client/provider combinations require separate validation in the intended environment.
 
 Licensed under [Apache-2.0](LICENSE). Copyright 2026 Sourik Ganguly and Accension contributors. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Workbench
+
+Workbench adds persistent projects, PRDs, dependent Work Items, real Engine attempts, checks/receipts and human review. Run `accs start`, then `accs workbench open`; use `accs workbench --help` for CLI commands. Browsing makes no inference calls. Existing V1 commands and management UI remain available.
+
+LAN is a separate, opt-in TLS interface. Install `.[lan]`, configure `workbench_lan` in the router home's `config/local.yaml` with a certificate, private key, exact HTTPS origins and allowed workspace IDs, then restart the daemon. Pair devices through local Workbench Settings and grant only the required capabilities. Clients must trust the certificate authority and its SAN must match the configured origin; no certificate bypass is supported. Physical-device trust onboarding and live provider spending were not verified.
+
+Workbench upgrades SQLite state to version 7 after creating a verified backup. Older binaries must not open upgraded state; downgrade requires backup restoration and loses post-backup database changes. It does not undo repository edits.

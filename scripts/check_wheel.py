@@ -41,7 +41,43 @@ def main():
         for family in ("skill", "preset"):
             run([str(cli), family, "list", "--mock", "--json"], base, env)
         run([str(cli), "logs", "--json"], base, env)
-    print("PASS: wheel build, clean installation, help, version, mock doctor, skills, presets and logs")
+        run(
+            [
+                str(python),
+                "-c",
+                "from importlib.resources import files; from local_ai_router.workbench.templates import builtins; r=files('local_ai_router'); assert all(r.joinpath('static',n).read_bytes() for n in ('workbench.html','workbench.js','workbench.css','workbench-lan.html','workbench-lan.js')); assert len(builtins())==2",
+            ],
+            base,
+            env,
+        )
+        smoke = """
+import asyncio
+from pathlib import Path
+import httpx
+from local_ai_router.app import create_app
+from local_ai_router.config import load
+from local_ai_router.engine import Engine
+from local_ai_router.cli_parser import parser
+from local_ai_router.db_migrations import SUPPORTED_VERSION
+from local_ai_router.workbench.cli import dispatch
+from local_ai_router.workbench.client import WorkbenchClient
+async def main():
+    engine = Engine(load(Path('home'), mock=True))
+    app = create_app(engine.settings, engine)
+    try:
+        client = WorkbenchClient(engine.settings, transport=httpx.ASGITransport(app=app))
+        result = await dispatch(parser().parse_args(['workspace','list','--json']), engine.settings, client=client)
+        assert result['items'] and engine.store.db.execute('PRAGMA user_version').fetchone()[0] == SUPPORTED_VERSION
+        assert engine.store.costs()['calls'] == 0
+    finally:
+        await app.state.workbench.close()
+        await engine.close()
+asyncio.run(main())
+"""
+        run([str(python), "-c", smoke], base, env)
+    print(
+        "PASS: wheel build, clean installation, help, version, mock doctor, skills, presets, logs and Workbench resources"
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Accension remote Workbench</title>
+    <link rel="icon" href="/assets/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/style.css" />
+    <link rel="stylesheet" href="/assets/workbench.css" />
+    <script src="/assets/workbench-lan.js" defer></script>
+  </head>
+  <body class="workbench">
+    <a class="skip-link" href="#main">Skip to workspace</a>
+    <aside>
+      <a class="brand" href="/"><img class="mark" src="/assets/logo.svg" alt="" />Accension</a>
+      <p class="caption">REMOTE WORKBENCH</p>
+      <div class="local-badge">
+        <p>Private workspace access</p>
+        <p>Your host controls this device's permissions.</p>
+      </div>
+    </aside>
+    <main id="main" tabindex="-1">
+      <header>
+        <div>
+          <div class="eyebrow">WORKBENCH / REMOTE</div>
+          <h1>Remote Workbench</h1>
+        </div>
+        <p id="connection" class="chip" role="status" aria-live="polite">Pair this browser</p>
+      </header>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="pairing">
+        <h2>Pair with your host</h2>
+        <p>Open the exact HTTPS URL supplied by your host. Trust its issuing CA through your device settings. Compare the verification phrase on both screens before host approval.</p>
+        <form id="pair-form">
+          <label>One-time pairing code<input name="code" required maxlength="128" autocomplete="off" /></label>
+          <label>Device display name<input name="name" required maxlength="80" value="Remote browser" /></label>
+          <button>Request pairing</button>
+        </form>
+        <p id="phrase" role="status"></p>
+        <button id="claim" type="button" hidden>Host approved — connect</button>
+      </section>
+      <section id="workspace-view" hidden>
+        <nav class="remote-actions" aria-label="Remote navigation">
+          <button id="refresh" class="quiet" type="button">Refresh</button>
+          <button id="logout" class="quiet" type="button" data-mutation>Log out</button>
+        </nav>
+        <label>Workspace<select id="workspace"></select></label>
+        <section id="content" aria-label="Work item board"></section>
+        <section id="detail" aria-label="Work item details"></section>
+      </section>
+    </main>
+  </body>
+</html>

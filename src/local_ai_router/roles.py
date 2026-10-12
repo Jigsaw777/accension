@@ -86,6 +86,10 @@ class RoleResolver:
             m = self.priced(original) if original.provider in self.settings.providers else original
             provider = self.settings.providers.get(m.provider)
             reasons = []
+            from .contracts import execution_allowed
+
+            if not execution_allowed(m, role):
+                reasons.append("EXECUTION_ROLE_DENIED")
             quality = self.store.quality(m, decision.task_family)
             dimension = ROLE_DIMENSIONS.get(policy_role)
             if dimension in m.quality:

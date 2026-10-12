@@ -23,12 +23,16 @@ def create_app(settings=None, engine=None):
     from .savings_stream import SavingsStream
 
     pulse = SavingsStream(engine)
+    from .workbench.runtime import WorkbenchRuntime
+
+    workbench = getattr(engine, "workbench_runtime", None) or WorkbenchRuntime(engine)
 
     @asynccontextmanager
     async def lifespan(app):
         from .recovery import interrupted
 
         interrupted(engine)
+        await workbench.start(dispatcher=True)
         watcher = asyncio.create_task(engine.discovery.watch())
         economics = asyncio.create_task(pulse.watch())
         try:
@@ -38,6 +42,7 @@ def create_app(settings=None, engine=None):
             watcher.cancel()
             economics.cancel()
             await asyncio.gather(watcher, economics, return_exceptions=True)
+            await workbench.close()
             await engine.close()
 
     app = FastAPI(
@@ -45,9 +50,13 @@ def create_app(settings=None, engine=None):
     )
     app.state.engine = engine
     app.state.savings_stream = pulse
+    app.state.workbench = workbench
     from .ui import install_ui
 
     install_ui(app, engine)
+    from .workbench.api import install as install_workbench
+
+    install_workbench(app, workbench)
 
     @app.middleware("http")
     async def log_request(request, call_next):

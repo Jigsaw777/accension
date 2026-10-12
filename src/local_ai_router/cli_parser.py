@@ -44,6 +44,7 @@ COMMANDS = (
 )
 PRIVACY = ["LOCAL_ONLY", "CLOUD_REDACTED", "CLOUD_ALLOWED"]
 COMMANDS += ("skill", "preset", "logs")
+COMMANDS += ("workspace", "project", "prd", "work", "workbench", "template", "agent")
 
 
 def common(parser, child=False):
@@ -281,6 +282,9 @@ def parser():
     child.add_argument("action", choices=["list", "inspect", "resume", "rollback", "discard"])
     child.add_argument("plan_id", nargs="?")
     command("demo").add_argument("--repo")
+    from .workbench.cli import add_parsers
+
+    add_parsers(command)
     return root
 
 

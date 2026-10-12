@@ -1,0 +1,17 @@
+schema_version: 1
+id: work-item-default
+kind: work_item
+version: 1
+display_name: Work item
+required_fields: [objective, acceptance_criteria, definition_of_done]
+sections:
+  - {field: objective, label: Objective, display: text}
+  - {field: description, label: Description, display: text}
+  - {field: rationale, label: Rationale, display: text}
+  - {field: acceptance_criteria, label: Acceptance criteria, display: checklist}
+  - {field: definition_of_done, label: Definition of done, display: checklist}
+  - {field: allowed_paths, label: Allowed paths, display: list}
+  - {field: expected_artifacts, label: Expected artifacts, display: list}
+  - {field: validation_checks, label: Registered validation, display: list}
+  - {field: constraints, label: Constraints, display: list}
+  - {field: context_notes, label: Context notes, display: text}

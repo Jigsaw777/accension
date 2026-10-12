@@ -218,8 +218,10 @@ class Providers:
         probe=None,
         call_budget=None,
     ):
+        from .contracts import execution_guard
         from .observability import scope
 
+        execution_guard(model, role)
         start = time.monotonic()
         with scope(request_id=request_id, session_id=session, provider=model.provider, model=model.id, task_id=task_id):
             self.store.log.emit("provider", "start")
@@ -227,6 +229,7 @@ class Providers:
                 result = await self._generate_checked(
                     model, messages, role, request_id, session, budget, max_output, schema, task_id, probe, call_budget
                 )
+                execution_guard(model, role)
                 self.store.log.emit(
                     "provider",
                     "end",

@@ -61,8 +61,15 @@ def install_ui(app, engine):
             "x-api-key", ""
         )
         authenticated = bool(supplied) and secrets.compare_digest(supplied, engine.settings.token)
-        document = request.url.path in {"/", "/ui", "/ui/"} and request.method in {"GET", "HEAD"}
-        public = document or request.url.path in {"/health", "/static/app.js", "/static/style.css"}
+        document = request.url.path in {"/", "/ui", "/ui/", "/ui/workbench"} and request.method in {"GET", "HEAD"}
+        public = document or request.url.path in {
+            "/health",
+            "/static/app.js",
+            "/static/style.css",
+            "/static/workbench.js",
+            "/static/workbench.css",
+            "/static/logo.svg",
+        }
         if not public and not authenticated:
             if not session or not request.url.path.startswith("/ui/"):
                 return JSONResponse(
@@ -74,6 +81,7 @@ def install_ui(app, engine):
             ):
                 return JSONResponse({"error": "Same-origin CSRF token required"}, 403)
         request.state.ui_session = session
+        request.state.service_authenticated = authenticated
         response = await call_next(request)
         if document and not session:
             if len(sessions) >= 128:
@@ -106,10 +114,16 @@ def install_ui(app, engine):
     async def home():
         return FileResponse(STATIC / "index.html", media_type="text/html")
 
+    @app.get("/ui/workbench")
+    async def workbench():
+        return FileResponse(STATIC / "workbench.html", media_type="text/html")
+
     @app.get("/static/{name}")
     async def static(name: str):
-        if name not in {"app.js", "style.css"}:
+        if name not in {"app.js", "style.css", "workbench.js", "workbench.css", "logo.svg"}:
             raise HTTPException(404)
+        if name == "logo.svg":
+            return FileResponse(STATIC / name, media_type="image/svg+xml")
         return FileResponse(STATIC / name, media_type="text/javascript" if name.endswith("js") else "text/css")
 
     @app.get("/ui/session")
