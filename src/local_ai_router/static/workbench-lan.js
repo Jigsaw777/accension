@@ -81,7 +81,7 @@
     const scopes = await request(base + "/workspaces"); $("workspace").replaceChildren();
     for (const scope of scopes.items) { const option = el("option", scope.name); option.value = scope.id; $("workspace").append(option); }
     ws = $("workspace").value; $("pairing").hidden = true; $("workspace-view").hidden = false;
-    status(true); await snapshot(); connect(); await board();
+    status(true); await snapshot(); connect(); await board(); notice("");
   }
   $("pair-form").onsubmit = async event => { event.preventDefault(); try { pending = await request("/pairing/request", Object.fromEntries(new FormData(event.target))); $("phrase").textContent = "Compare with host: " + pending.verification_phrase; $("claim").hidden = false; event.target.elements.code.value = ""; notice("Waiting for host approval. Then connect."); } catch (error) { notice(error.message); } };
   $("claim").onclick = async () => { try { await request("/pairing/claim", {id: pending.id, challenge: pending.challenge, browser: true}); pending = null; $("phrase").textContent = ""; $("claim").hidden = true; await start(); } catch (error) { notice(error.message); } };

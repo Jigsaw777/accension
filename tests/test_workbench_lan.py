@@ -163,6 +163,9 @@ async def test_v1_routes_absent_on_lan_and_exact_host(engine):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://localhost:8766") as client:
         assert (await client.get("/health")).status_code == 200
         assert (await client.get("/router/models")).status_code == 404
+        assert (await client.get("/assets/style.css")).status_code == 200
+        for name in ("app.js", "workbench.js", "index.html"):
+            assert (await client.get("/assets/" + name)).status_code == 404
         assert (await client.get("/health", headers={"host": "evil.test:8766"})).status_code == 403
         assert (await client.get("/health", headers={"origin": "https://evil.test"})).status_code == 403
     await runtime.close()

@@ -297,7 +297,7 @@ def create_lan_app(runtime):
 
     @app.get("/assets/{name}")
     async def asset(name: str):
-        if name not in {"workbench-lan.js", "workbench.css"}:
+        if name not in {"workbench-lan.js", "workbench.css", "style.css"}:
             return JSONResponse({"error": {"code": "NOT_FOUND"}}, 404)
         return FileResponse(Path(__file__).parents[1] / "static" / name)
 

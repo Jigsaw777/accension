@@ -1,5 +1,11 @@
 "use strict";
 (() => {
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem("accension-theme") || "system";
+  } catch {
+    // Storage can be disabled; the shared stylesheet follows the system theme.
+  }
   const $ = (id) => document.getElementById(id),
     base = "/ui/workbench/api";
   const states = [
@@ -272,7 +278,12 @@
   }
   async function render() {
     const content = $("content");
-    content.replaceChildren(el("h2", page));
+    content.replaceChildren();
+    $("page-title").textContent = page;
+    $("project-context").textContent =
+      ($("workspace").selectedOptions[0]?.textContent || "Workspace") +
+      " / " +
+      ($("project").selectedOptions[0]?.textContent || "All projects");
     for (const b of $("navigation").children)
       b.setAttribute("aria-current", b.textContent === page ? "page" : "false");
     if (page === "Overview") {
@@ -1029,7 +1040,7 @@
     }
   }
   async function board(content) {
-    const toolbar = el("div", undefined, "actions");
+    const toolbar = el("div", undefined, "actions board-toolbar");
     toolbar.append(button("Create work item", () => itemDetail(null), true));
     const search = el("input");
     search.placeholder = "Search titles";
@@ -1049,6 +1060,9 @@
     content.append(mobile);
     const main = el("div", undefined, "board"),
       exceptional = el("div", undefined, "exceptional");
+    main.setAttribute("role", "region");
+    main.setAttribute("aria-label", "Work item board columns");
+    main.tabIndex = 0;
     content.append(main, el("h3", "Exceptional states"), exceptional);
     const containers = new Map();
     for (const state of states) {

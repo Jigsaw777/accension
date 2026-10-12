@@ -170,9 +170,18 @@ def pair_browser(browsers, lan_server, capabilities="workspace.read,artifact.rea
     playwright.expect(remote.locator("#content")).to_contain_text("Review on phone")
 
 
-def test_browser_pair_host_approval_readonly_client(browsers, lan_server):
+def test_browser_pair_host_approval_readonly_client(browsers, lan_server, tmp_path):
     pair_browser(browsers, lan_server)
-    _, page, context = browsers
+    host, page, context = browsers
+    playwright.expect(page.locator("#notice")).to_have_text("")
+    colors = "node => [getComputedStyle(node).backgroundColor, getComputedStyle(node).color]"
+    for theme in ("light", "dark"):
+        host.emulate_media(color_scheme=theme)
+        page.emulate_media(color_scheme=theme)
+        assert page.locator("body").evaluate(colors) == host.locator("body").evaluate(colors)
+        screenshot = tmp_path / f"workbench-remote-{theme}-mobile.png"
+        page.screenshot(path=str(screenshot), full_page=True)
+        print(f"UI screenshot: {screenshot}")
     page.locator("#content button").click()
     playwright.expect(page.get_by_role("heading", name="Completion evidence")).to_be_visible()
     assert page.get_by_role("button", name="approve_completion", exact=True).count() == 0

@@ -97,6 +97,61 @@ def create_item(page, title="Browser task"):
     playwright.expect(page.locator("#content").get_by_role("button", name=title, exact=True)).to_be_visible()
 
 
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_workbench_reuses_accension_theme(page, server, tmp_path, theme):
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.emulate_media(color_scheme="dark" if theme == "light" else "light")
+    page.evaluate("theme => localStorage.setItem('accension-theme', theme)", theme)
+    page.goto(server[0] + "/ui")
+    playwright.expect(page.locator("html")).to_have_attribute("data-theme", theme)
+    colors = "node => [getComputedStyle(node).backgroundColor, getComputedStyle(node).color]"
+    original = page.locator("body").evaluate(colors)
+    sidebar = page.locator("aside").evaluate(colors)
+
+    page.goto(server[0] + "/ui/workbench")
+    playwright.expect(page.locator("#connection")).to_contain_text("Connected")
+    project(page)
+    create_item(page, "Restore the Accension theme")
+    page.get_by_role("button", name="Overview", exact=True).click()
+    page.get_by_role("button", name="Board", exact=True).click()
+    playwright.expect(page.get_by_role("button", name="Restore the Accension theme", exact=True)).to_be_visible()
+    desktop = tmp_path / f"workbench-{theme}-desktop.png"
+    page.screenshot(path=str(desktop), full_page=True)
+    print(f"UI screenshot: {desktop}")
+    assert page.locator("body").evaluate(colors) == original
+    assert page.locator("aside").evaluate(colors) == sidebar
+    playwright.expect(page.locator("header h1")).to_have_text("Board")
+    playwright.expect(page.locator("#project-context")).to_contain_text("Browser project")
+    playwright.expect(page.get_by_role("button", name="Board", exact=True)).to_have_attribute("aria-current", "page")
+    assert page.locator("aside").evaluate("node => getComputedStyle(node).position") == "fixed"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+    for width in (1024, 768):
+        page.set_viewport_size({"width": width, "height": 900})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.set_viewport_size({"width": 360, "height": 800})
+    page.get_by_label("Visible board state").select_option("BACKLOG")
+    playwright.expect(page.locator('.column[data-state="BACKLOG"]')).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    mobile = tmp_path / f"workbench-{theme}-mobile.png"
+    page.screenshot(path=str(mobile), full_page=True)
+    print(f"UI screenshot: {mobile}")
+
+
+def test_workbench_uses_system_theme_when_storage_is_unavailable(page):
+    page.emulate_media(color_scheme="dark")
+    original = page.locator("body").evaluate("node => getComputedStyle(node).backgroundColor")
+    page.context.add_init_script("""
+        Object.defineProperty(window, 'localStorage', {
+            get() { throw new DOMException('Storage disabled', 'SecurityError'); }
+        });
+    """)
+    page.reload()
+    playwright.expect(page.locator("#connection")).to_contain_text("Connected")
+    playwright.expect(page.locator("header h1")).to_have_text("Overview")
+    assert page.locator("body").evaluate("node => getComputedStyle(node).backgroundColor") == original
+
+
 def test_browser_manual_create_edit_board_sse(page, server):
     project(page)
     create_item(page)
