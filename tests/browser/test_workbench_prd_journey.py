@@ -152,7 +152,15 @@ def test_breakdown_review_import_backlog(page, server):  # noqa: F811
     playwright.expect(page.locator("#detail")).to_contain_text("Import preview · PRD revision 3", timeout=10000)
     playwright.expect(page.get_by_label("Import Greeting task", exact=True)).to_be_checked()
     playwright.expect(page.locator("#detail")).to_contain_text("Requirement coverage: R1")
-    page.get_by_role("button", name="Import selected tasks", exact=True).click()
+    with page.expect_response(
+        lambda response: (
+            "/ui/workbench/api/plan-imports/" in response.url
+            and "/commit?" in response.url
+            and response.request.method == "POST"
+        )
+    ) as imported:
+        page.get_by_role("button", name="Import selected tasks", exact=True).click()
+    assert imported.value.status == 200
     with httpx.Client(base_url=server[0], headers=headers, trust_env=False) as client:
         work = client.get(
             "/accs/v1/workbench/work-items", params={"workspace_id": workspace["id"], "project_id": project["id"]}
