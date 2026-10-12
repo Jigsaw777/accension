@@ -29,7 +29,9 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
-UninstallDisplayIcon={app}\python\pythonw.exe
+SetupIconFile={#PayloadDir}\accension.ico
+UninstallDisplayIcon={app}\accension.ico
+CreateUninstallRegKey=not IsSmokeTest
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
@@ -38,9 +40,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Accension"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"""; WorkingDir: "{app}"
-Name: "{group}\Stop Accension"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"" --stop"; WorkingDir: "{app}"
-Name: "{autodesktop}\Accension"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"""; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\Accension"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"""; WorkingDir: "{app}"; IconFilename: "{app}\accension.ico"
+Name: "{group}\Stop Accension"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"" --stop"; WorkingDir: "{app}"; IconFilename: "{app}\accension.ico"
+Name: "{autodesktop}\Accension"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"""; WorkingDir: "{app}"; Tasks: desktopicon; IconFilename: "{app}\accension.ico"
 
 [Run]
 Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"""; Description: "Open Accension"; Flags: nowait postinstall skipifsilent
@@ -50,6 +52,11 @@ Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\desktop.py"""; Descri
 Type: filesandordirs; Name: "{app}\python"
 
 [Code]
+function IsSmokeTest(): Boolean;
+begin
+  Result := ExpandConstant('{param:SmokeTest|0}') = '1';
+end;
+
 function StopInstalledHub(): Boolean;
 var
   ExitCode: Integer;

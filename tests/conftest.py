@@ -35,7 +35,7 @@ def no_external_network(monkeypatch):
 def settings(tmp_path):
     source = Path(__file__).resolve().parents[1]
     shutil.copytree(source / "config", tmp_path / "config", ignore=shutil.ignore_patterns("local.yaml"))
-    shutil.copytree(source / "prompts", tmp_path / "prompts")
+    shutil.copytree(source / "src/local_ai_router/data/prompts", tmp_path / "prompts")
     s = load(tmp_path, mock=True)
     s.discovery.enabled = False
     return s

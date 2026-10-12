@@ -120,6 +120,7 @@ def test_workbench_reuses_accension_theme(page, server, tmp_path, theme):
     print(f"UI screenshot: {desktop}")
     assert page.locator("body").evaluate(colors) == original
     assert page.locator("aside").evaluate(colors) == sidebar
+    assert page.locator(".brand img").evaluate("node => node.complete && node.naturalWidth > 0")
     playwright.expect(page.locator("header h1")).to_have_text("Board")
     playwright.expect(page.locator("#project-context")).to_contain_text("Browser project")
     playwright.expect(page.get_by_role("button", name="Board", exact=True)).to_have_attribute("aria-current", "page")

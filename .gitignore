@@ -13,6 +13,11 @@ docs/verification.json
 docs/test-results.xml
 # Keep local documentation additions out of commits; existing public guides stay tracked.
 /docs/
+# Local implementation prompts, task cards and overrides; packaged defaults stay public.
+/prompts/
+/workbench/
+/docs/prompts/
+/docs/workbench/
 REPORT.md
 scripts/router.cmd
 scripts/codex-*.cmd

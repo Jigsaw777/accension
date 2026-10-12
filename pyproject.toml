@@ -39,7 +39,7 @@ where = ["src"]
 version = {attr = "local_ai_router.__version__"}
 
 [tool.setuptools.package-data]
-local_ai_router = ["static/*.html", "static/*.css", "static/*.js", "data/prompts/*/*.txt", "data/templates/*.yaml"]
+local_ai_router = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg", "data/prompts/*/*.txt", "data/templates/*.yaml"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

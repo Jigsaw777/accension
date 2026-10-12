@@ -174,6 +174,7 @@ def test_browser_pair_host_approval_readonly_client(browsers, lan_server, tmp_pa
     pair_browser(browsers, lan_server)
     host, page, context = browsers
     playwright.expect(page.locator("#notice")).to_have_text("")
+    assert page.locator(".brand img").evaluate("node => node.complete && node.naturalWidth > 0")
     colors = "node => [getComputedStyle(node).backgroundColor, getComputedStyle(node).color]"
     for theme in ("light", "dark"):
         host.emulate_media(color_scheme=theme)

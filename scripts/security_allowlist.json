@@ -286,5 +286,40 @@
     ],
     "count": 1,
     "reason": "WB31 contributor-only Node syntax check: installed Node path, fixed bundled filenames, argv without shell. No imported data or production execution."
+  },
+  {
+    "id": "602fc51622850caa68d6111acba2b8c2b31403d5daa17f601a75904dcf2295fa",
+    "file": "scripts/build_windows_installer.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed contributor Windows packaging: fixed build/pip/bundled-import/Inno argv, explicit local compiler, shell disabled, check=True and 600-second timeout; no task/model input or user profile execution."
+  },
+  {
+    "id": "c00c8681d16af62ef09afb5cc54e1f86c8596df03e4636e52fd937bfa5b61d71",
+    "file": "scripts/build_windows_installer.py",
+    "categories": ["subprocess.check_output"],
+    "count": 1,
+    "reason": "Reviewed read-only provenance: fixed git rev-parse HEAD argv in known repository with 10-second timeout; no shell or imported task input."
+  },
+  {
+    "id": "8d52559e1fa3eac2aee76ac97196a0022471e685e1dd8d3f41083a1f82b66460",
+    "file": "scripts/smoke_windows_installer.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed smoke-test socket: short-lived ephemeral loopback port selection, never accepts traffic; isolated disposable profile."
+  },
+  {
+    "id": "a4540bc890c2c586857fb31748094622bc52ca43afa4b608b30769ab52f05133",
+    "file": "scripts/smoke_windows_installer.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed smoke-test bind to hard-coded 127.0.0.1 port zero for isolated installed hub; socket closes immediately, no external interface or user configuration."
+  },
+  {
+    "id": "c3df2eb54d45b07136c35f8b0ac2d8c4df1970378c014d54e82b2f2efd57dd37",
+    "file": "scripts/smoke_windows_installer.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed explicit developer/CI installer smoke: checksum-verified build, bundled launcher and uninstaller, fixed argv without shell, hidden window and 180-second timeout; fresh home/install path, no production registry registration or provider inference."
   }
 ]

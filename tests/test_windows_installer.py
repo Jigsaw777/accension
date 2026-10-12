@@ -87,3 +87,45 @@ def test_build_version_matches_public_package():
 
     builder = module("windows_builder", "scripts/build_windows_installer.py")
     assert builder.version() == __version__
+
+
+def test_asset_hashes_detect_stale_installed_ui(tmp_path):
+    builder = module("windows_builder", "scripts/build_windows_installer.py")
+    source, installed = tmp_path / "source", tmp_path / "installed"
+    for folder in (source, installed):
+        (folder / "static").mkdir(parents=True)
+        (folder / "static/workbench.html").write_text("current UI")
+    assert builder.asset_hashes(source) == builder.asset_hashes(installed)
+    (installed / "static/workbench.html").write_text("old UI")
+    assert builder.asset_hashes(source) != builder.asset_hashes(installed)
+
+
+def test_shared_logo_is_inert_and_referenced_by_every_shell():
+    import xml.etree.ElementTree as xml
+
+    from local_ai_router import ui
+
+    svg = xml.fromstring((ui.STATIC / "logo.svg").read_text(encoding="utf-8"))
+    assert {node.tag.rsplit("}", 1)[-1] for node in svg.iter()} == {"svg", "rect", "text"}
+    for name, base in (("index.html", "/static/"), ("workbench.html", "/static/"), ("workbench-lan.html", "/assets/")):
+        shell = (ui.STATIC / name).read_text(encoding="utf-8")
+        assert 'src="' + base + 'logo.svg"' in shell
+        assert 'href="' + base + 'logo.svg"' in shell
+
+
+@pytest.mark.asyncio
+async def test_logo_served_publicly_with_svg_media_type(engine):
+    import httpx
+
+    from local_ai_router.app import create_app
+    from local_ai_router.ui import STATIC
+
+    app = create_app(engine.settings, engine)
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1") as client:
+            response = await client.get("/static/logo.svg")
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("image/svg+xml")
+            assert response.content == (STATIC / "logo.svg").read_bytes()
+    finally:
+        await app.state.workbench.close()

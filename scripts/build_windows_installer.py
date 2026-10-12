@@ -6,10 +6,12 @@ import hashlib
 import importlib.metadata
 import json
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -48,6 +50,36 @@ def version():
 
 def run(argv, cwd=ROOT):
     subprocess.run([str(arg) for arg in argv], cwd=cwd, check=True, timeout=600)
+
+
+def asset_hashes(package):
+    return {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((package / "static").iterdir())
+        if path.is_file()
+    }
+
+
+def build_icon(destination):
+    from playwright.sync_api import sync_playwright
+
+    svg = (ROOT / "src/local_ai_router/static/logo.svg").read_text(encoding="utf-8")
+    sizes = (16, 32, 48, 64, 256)
+    with sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_content("<style>body{margin:0}svg{display:block;width:100vw;height:100vh}</style>" + svg)
+        images = []
+        for size in sizes:
+            page.set_viewport_size({"width": size, "height": size})
+            images.append(page.screenshot(omit_background=True))
+        browser.close()
+    offset = 6 + 16 * len(sizes)
+    entries = []
+    for size, image in zip(sizes, images, strict=True):
+        entries.append(struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(image), offset))
+        offset += len(image)
+    destination.write_bytes(struct.pack("<HHH", 0, 1, len(sizes)) + b"".join(entries + images))
 
 
 def main(argv=None):
@@ -108,15 +140,24 @@ def main(argv=None):
                 str(wheel) + "[azure,aws,google,lan]",
             ]
         )
+        assets = asset_hashes(ROOT / "src/local_ai_router")
+        if asset_hashes(packages / "local_ai_router") != assets:
+            raise RuntimeError("Bundled UI assets do not match current source")
         # Build intermediates never ship; each build uses fresh package sources.
         shutil.rmtree(source)
         shutil.rmtree(wheel_dir)
         shutil.copy2(ROOT / "installer/windows/desktop.py", payload / "desktop.py")
+        build_icon(payload / "accension.ico")
         for name in ("LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"):
             shutil.copy2(ROOT / name, payload / name)
         shutil.copy2(ROOT / "installer/windows/README.md", payload / "README.md")
         manifest = {
             "version": app_version,
+            "built_at": datetime.now(timezone.utc).isoformat(),
+            "source_commit": subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=10
+            ).strip(),
+            "ui_assets": assets,
             "python": {"version": PYTHON_VERSION, "url": PYTHON_URL, "sha256": PYTHON_SHA256},
             "packages": sorted(
                 [
@@ -156,6 +197,10 @@ def main(argv=None):
     checksum = hashlib.sha256(executable.read_bytes()).hexdigest()
     executable.with_suffix(".exe.sha256").write_text(f"{checksum}  {executable.name}\n", encoding="utf-8")
     executable.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    latest = output / "Accension-latest-windows-x64.exe"
+    shutil.copy2(executable, latest)
+    latest.with_suffix(".exe.sha256").write_text(f"{checksum}  {latest.name}\n", encoding="utf-8")
+    latest.with_suffix(".manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"PASS: Windows installer {executable}")
     return 0
 

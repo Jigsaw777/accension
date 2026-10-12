@@ -68,6 +68,7 @@ def install_ui(app, engine):
             "/static/style.css",
             "/static/workbench.js",
             "/static/workbench.css",
+            "/static/logo.svg",
         }
         if not public and not authenticated:
             if not session or not request.url.path.startswith("/ui/"):
@@ -119,8 +120,10 @@ def install_ui(app, engine):
 
     @app.get("/static/{name}")
     async def static(name: str):
-        if name not in {"app.js", "style.css", "workbench.js", "workbench.css"}:
+        if name not in {"app.js", "style.css", "workbench.js", "workbench.css", "logo.svg"}:
             raise HTTPException(404)
+        if name == "logo.svg":
+            return FileResponse(STATIC / name, media_type="image/svg+xml")
         return FileResponse(STATIC / name, media_type="text/javascript" if name.endswith("js") else "text/css")
 
     @app.get("/ui/session")

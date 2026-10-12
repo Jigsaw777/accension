@@ -1,0 +1,74 @@
+name: Windows installer
+'on':
+  push:
+    branches: [main, develop]
+  pull_request:
+    paths:
+      - src/**
+      - installer/windows/**
+      - scripts/*windows_installer.py
+      - tests/test_windows_installer.py
+      - pyproject.toml
+      - .github/workflows/windows-installer.yml
+  workflow_dispatch: null
+permissions:
+  contents: read
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test,dev,browser]'
+      - run: python -m playwright install chromium
+      - name: Install verified Inno Setup compiler
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $setup
+          if ((Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant() -ne '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732') { throw 'Compiler checksum mismatch' }
+          $compiler = Join-Path $env:RUNNER_TEMP 'Inno Setup'
+          $process = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', "/DIR=`"$compiler`"") -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw 'Compiler installation failed' }
+          python scripts/build_windows_installer.py --compiler "$compiler\ISCC.exe"
+      - run: python -m pytest tests/test_windows_installer.py -q --no-cov --basetemp=build/windows/unit-tests
+      - run: python scripts/smoke_windows_installer.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: accension-windows-${{ github.sha }}
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 30
+  publish:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: accension-windows-${{ github.sha }}
+          path: dist/windows
+      - name: Update branch build download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+          BUILD_BRANCH: ${{ github.ref_name }}
+        run: |
+          tag="windows-${BUILD_BRANCH}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$BUILD_SHA" --prerelease --title "Windows ${BUILD_BRANCH} build" --notes "Automated offline installer from ${BUILD_SHA}. Unsigned; install this newer package to update."
+          fi
+          gh release edit "$tag" --prerelease --title "Windows ${BUILD_BRANCH} build" --notes "Latest successful Windows build from ${BUILD_SHA}. Unsigned; see its manifest and checksum. A newer installer is required for newer source."
+          gh release upload "$tag" dist/windows/Accension-latest-windows-x64.* --clobber
