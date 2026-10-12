@@ -126,6 +126,7 @@ async def test_nearest_rank_nine_samples_and_retry_count(execution):  # noqa: F8
     assert totals["duration_samples"] == 9
     assert totals["p50_duration_ms"] == 500 and totals["p95_duration_ms"] == 900
     assert totals["retries"] == 8
+    assert totals["first_attempt_denominator"] == totals["first_attempt_successes"] == 1
 
 
 async def test_metrics_current_load_queue_percentiles_and_kind(execution):  # noqa: F811
@@ -148,6 +149,26 @@ async def test_metrics_current_load_queue_percentiles_and_kind(execution):  # no
     assert manual["totals"]["attempts"] == manual["totals"]["retries"] == manual["current_load"]["load"] == 0
     with pytest.raises(Exception, match="window"):
         agent_metrics(runtime, ws.id, agent["id"], HUMAN, start=1, end=3000, execution_kind="SQL")
+
+
+@pytest.mark.parametrize(
+    "state,queued,running",
+    [
+        ("QUEUED", 1, 0),
+        ("CLAIMED", 0, 0),
+        ("RUNNING", 0, 1),
+        ("VERIFYING", 0, 1),
+        ("RECONCILING", 0, 0),
+        ("SUCCEEDED", 0, 0),
+    ],
+)
+async def test_current_metrics_count_only_queued_and_running_states(execution, state, queued, running):  # noqa: F811
+    runtime, ws, _, agent, _ = execution
+    attempt_id = queue(execution, item(execution))
+    runtime.service.store.db.execute("UPDATE wb_attempts SET state=? WHERE id=?", (state, attempt_id))
+    result = agent_metrics(runtime, ws.id, agent["id"], HUMAN, start=1, end=3000)
+    assert result["current_load"]["queued"] == queued
+    assert result["current_load"]["running"] == running
 
 
 async def test_10k_metrics_bounded_queries_latency_and_fanout(execution, tmp_path):  # noqa: F811

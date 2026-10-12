@@ -176,6 +176,7 @@ def agent_metrics(
         clauses.append("adapter='manual'")
     where = " AND ".join(clauses)
     with store.router.lock:
+        # Pin the existing partial index so live counts never scan terminal history.
         active = store.db.execute(
             "SELECT (EXISTS(SELECT 1 FROM wb_agent_workspaces WHERE workspace_id=? AND agent_id=?) OR EXISTS(SELECT 1 FROM wb_attempt_facts WHERE workspace_id=? AND agent_definition_id=?)) AS known_agent,"
             "(SELECT concurrency_limit FROM wb_agent_definitions WHERE id=?) AS capacity,"
@@ -183,21 +184,21 @@ def agent_metrics(
             + (" AND w.project_id=?" if project_id else "")
             + (" AND w.execution_kind=?" if execution_kind else "")
             + ") AS load,"
-            "(SELECT COUNT(*) FROM wb_attempts a JOIN wb_assignments s ON s.id=a.assignment_id WHERE a.workspace_id=? AND s.agent_definition_id=? AND a.state='QUEUED'"
+            "(SELECT COUNT(*) FROM wb_attempts a INDEXED BY wb_attempt_active JOIN wb_assignments s ON s.id=a.assignment_id WHERE a.workspace_id=? AND s.agent_definition_id=? AND a.state IN ('QUEUED','CLAIMED','RUNNING','VERIFYING','RECONCILING') AND a.state='QUEUED'"
             + (
                 " AND EXISTS(SELECT 1 FROM wb_work_items w WHERE w.id=a.item_id AND w.project_id=?)"
                 if project_id
                 else ""
             )
-            + (" AND 0" if execution_kind == "MANUAL" else "")
+            + (" AND ?" if execution_kind == "MANUAL" else "")
             + ") AS queued,"
-            "(SELECT COUNT(*) FROM wb_attempts a JOIN wb_assignments s ON s.id=a.assignment_id WHERE a.workspace_id=? AND s.agent_definition_id=? AND a.state IN ('RUNNING','VERIFYING')"
+            "(SELECT COUNT(*) FROM wb_attempts a INDEXED BY wb_attempt_active JOIN wb_assignments s ON s.id=a.assignment_id WHERE a.workspace_id=? AND s.agent_definition_id=? AND a.state IN ('QUEUED','CLAIMED','RUNNING','VERIFYING','RECONCILING') AND a.state IN ('RUNNING','VERIFYING')"
             + (
                 " AND EXISTS(SELECT 1 FROM wb_work_items w WHERE w.id=a.item_id AND w.project_id=?)"
                 if project_id
                 else ""
             )
-            + (" AND 0" if execution_kind == "MANUAL" else "")
+            + (" AND ?" if execution_kind == "MANUAL" else "")
             + ") AS running"
             + (
                 ",EXISTS(SELECT 1 FROM wb_projects WHERE workspace_id=? AND id=?) AS valid_project"
@@ -217,9 +218,11 @@ def agent_metrics(
                 workspace_id,
                 agent_id,
                 *([project_id] if project_id else []),
+                *([0] if execution_kind == "MANUAL" else []),
                 workspace_id,
                 agent_id,
                 *([project_id] if project_id else []),
+                *([0] if execution_kind == "MANUAL" else []),
                 *([workspace_id, project_id] if project_id else []),
             ],
         ).fetchone()
@@ -298,14 +301,14 @@ def agent_metrics(
             (
                 "first_attempt_denominator",
                 "COUNT(*)",
-                "wb_attempts a JOIN wb_attempt_facts f ON f.attempt_id=a.id",
+                "wb_work_items w CROSS JOIN wb_attempts a ON a.item_id=w.id AND a.ordinal=1 JOIN wb_attempt_facts f ON f.attempt_id=a.id",
                 "a.started_at",
                 "a.ordinal=1 AND a.state IN ('SUCCEEDED','FAILED')",
             ),
             (
                 "first_attempt_successes",
                 "COUNT(*)",
-                "wb_attempts a JOIN wb_attempt_facts f ON f.attempt_id=a.id",
+                "wb_work_items w CROSS JOIN wb_attempts a ON a.item_id=w.id AND a.ordinal=1 JOIN wb_attempt_facts f ON f.attempt_id=a.id",
                 "a.started_at",
                 "a.ordinal=1 AND a.state='SUCCEEDED'",
             ),

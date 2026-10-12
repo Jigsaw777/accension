@@ -5,6 +5,7 @@ Accension 1.1.0 adds a persistent Workbench alongside model routing. Both views 
 - Organize projects, structured PRDs and dependent work items; generate and review planning proposals before import.
 - Review agents, model policy, file scope, registered checks and spending before starting a feature. Completion requires the applicable evidence-bound review.
 - Inspect recorded attempts, artifacts, receipts, activity and agent performance. Usage estimates and missing prices are identified explicitly.
+- Keep live-load and first-attempt metrics queries bounded by existing indexes as attempt history grows.
 - Install the Windows desktop package with bundled Python. Successful branch builds publish current-source installers with source, checksum and asset manifests.
 - Follow the updated [README](../README.md), [Workbench tutorial](guides/workbench.md), [feature delivery guide](guides/feature-delivery.md), [architecture](guides/architecture.md) and [current screenshots](guides/screenshots/feature-showcase.md).
 
