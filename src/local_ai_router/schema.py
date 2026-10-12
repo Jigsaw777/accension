@@ -169,6 +169,19 @@ class ModelDescriptor(Strict):
 Model = ModelDescriptor
 
 
+class ConnectorRegistration(Strict):
+    name: str = Field(min_length=1, max_length=200)
+    protocol_version: Literal[1] = 1
+    roles: list[Literal["executor", "repair", "repairer"]] = Field(
+        default=["executor", "repairer"], min_length=1, max_length=3
+    )
+    local_development: bool = False
+    max_request_bytes: int = Field(default=1_000_000, strict=True, ge=1024, le=2_000_000)
+    max_response_bytes: int = Field(default=1_000_000, strict=True, ge=1024, le=2_000_000)
+    timeout_seconds: int = Field(default=90, strict=True, ge=1, le=600)
+    max_polls: int = Field(default=30, strict=True, ge=1, le=100)
+
+
 class Provider(Strict):
     kind: str = Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
     endpoint: str = ""
@@ -197,6 +210,36 @@ class Provider(Strict):
     exclude_models: list[str] = []
     # An explicitly added private-network service is still remote for privacy policy.
     options: dict[str, str | int | bool] = {}
+    connector: ConnectorRegistration | None = None
+
+    @model_validator(mode="after")
+    def connector_registration(self):
+        if self.kind == "connector":
+            from urllib.parse import urlparse
+
+            if self.connector is None or not self.endpoint or self.protocol not in {"", "connector_v1"}:
+                raise ValueError("Connector requires explicit protocol-v1 registration and endpoint")
+            parsed = urlparse(self.endpoint)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("Connector endpoint must use HTTP(S) without credentials, query or fragment")
+            if parsed.scheme == "http" and not (
+                self.local and self.connector.local_development and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+            ):
+                raise ValueError("Connector HTTP requires explicit local loopback development")
+            if self.command or self.args or self.env or self.token_command or self.options:
+                raise ValueError("Connector registration cannot execute commands or arbitrary options")
+            if not self.local and not (self.credential_ref or self.api_key_env):
+                raise ValueError("Remote connector requires a credential reference")
+        elif self.connector is not None:
+            raise ValueError("Connector registration requires connector provider kind")
+        return self
 
 
 class Classification(Strict):
@@ -251,6 +294,7 @@ class TaskNode(Strict):
     likely_symbols: list[str] = []
     required_context: list[str] = []
     acceptance_criteria: list[str] = Field(min_length=1)
+    requirement_ids: list[str] = Field(default=[], max_length=100)
     unit_tests: list[str] = []
     integration_tests: list[str] = []
     validation_commands: list[str] = []
@@ -373,3 +417,21 @@ class Generation(Strict):
     text: str = ""
     usage: Usage = Field(default_factory=Usage)
     raw: dict[str, Any] = {}
+    usage_source: Literal["provider_reported", "connector_reported", "estimated", "unknown", "legacy_unknown"] = (
+        "unknown"
+    )
+    reported_usage_fields: list[Literal["input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens"]] = (
+        Field(default=[], max_length=4)
+    )
+
+
+class CallModelSnapshot(Strict):
+    id: str = Field(max_length=200)
+    provider: str = Field(max_length=200)
+    deployment_name: str = Field(max_length=200)
+    input_price: float | None = Field(default=None, ge=0)
+    output_price: float | None = Field(default=None, ge=0)
+    cached_input_price: float | None = Field(default=None, ge=0)
+    cache_write_price: float | None = Field(default=None, ge=0)
+    pricing_status: str = Field(max_length=128)
+    pricing_source: str = Field(max_length=200)

@@ -473,8 +473,8 @@ Licensed under [Apache-2.0](LICENSE). Copyright 2026 Sourik Ganguly and Accensio
 
 ## Workbench
 
-Workbench adds persistent projects, PRDs, dependent Work Items, real Engine attempts, checks/receipts and human review. Run `accs start`, then `accs workbench open`; use `accs workbench --help` for CLI commands. Browsing makes no inference calls. Existing V1 commands and management UI remain available.
+Workbench adds persistent projects, PRDs, dependent Work Items, real Engine attempts, checks/receipts and human review. Read the [feature delivery tutorial and architecture](docs/guides/feature-delivery.md) for model selection, batch approval, metrics and the offline demo. Run `accs start`, then `accs workbench open`; use `accs workbench --help` for CLI commands. Browsing makes no inference calls. Existing V1 commands and management UI remain available.
 
 LAN is a separate, opt-in TLS interface. Install `.[lan]`, configure `workbench_lan` in the router home's `config/local.yaml` with a certificate, private key, exact HTTPS origins and allowed workspace IDs, then restart the daemon. Pair devices through local Workbench Settings and grant only the required capabilities. Clients must trust the certificate authority and its SAN must match the configured origin; no certificate bypass is supported. Physical-device trust onboarding and live provider spending were not verified.
 
-Workbench upgrades SQLite state to version 7 after creating a verified backup. Older binaries must not open upgraded state; downgrade requires backup restoration and loses post-backup database changes. It does not undo repository edits.
+Workbench upgrades SQLite state to version 9 after creating a verified backup. Older binaries must not open upgraded state; downgrade requires backup restoration and loses post-backup database changes. It does not undo repository edits.

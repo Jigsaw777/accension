@@ -10,7 +10,7 @@ import time
 
 from ..schema import Strict
 from .policy import authorize
-from .schema import AgentProjection, DeviceProjection, WorkbenchEvent
+from .schema import AgentProjection, DeliveryProjection, DeviceProjection, WorkbenchEvent
 from .store import ENTITIES, WorkbenchError, identity, now
 
 
@@ -59,6 +59,22 @@ def append_event(store, kind, entity, principal, event_type, *, tombstone=False)
     store.db.execute(
         "INSERT INTO wb_entity_versions VALUES(?,?,?,?,?,?,?)",
         (workspace_id, kind, entity.id, entity.revision, sequence, payload, int(tombstone)),
+    )
+    from .activity import event_activity
+
+    event_activity(
+        store,
+        {
+            "entity_type": kind,
+            "entity_id": entity.id,
+            "event_id": event_id,
+            "workspace_id": workspace_id,
+            "timestamp": stamp,
+            "actor_type": principal.actor_type,
+            "actor_id": principal.id,
+            "event_type": event_type,
+        },
+        entity.model_dump(mode="json"),
     )
     return event
 
@@ -111,9 +127,9 @@ class Journal:
         raw = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
         return base64.urlsafe_b64encode(raw).decode() + "." + hmac.new(self.key, raw, hashlib.sha256).hexdigest()
 
-    def decode(self, token):
+    def decode(self, token, *, max_length=4000):
         try:
-            if not isinstance(token, str) or len(token) > 4000:
+            if not isinstance(token, str) or len(token) > max_length:
                 raise ValueError()
             encoded, signature = token.split(".")
             raw = base64.b64decode(encoded, altchars=b"-_", validate=True)
@@ -130,7 +146,7 @@ class Journal:
             not filters.kinds
             or len(filters.kinds) > 7
             or len(set(filters.kinds)) != len(filters.kinds)
-            or set(filters.kinds) - (ENTITIES.keys() | {"agent", "device"})
+            or set(filters.kinds) - (ENTITIES.keys() | {"agent", "device", "delivery"})
         ):
             raise WorkbenchError("INVALID_SNAPSHOT", "Unknown or duplicate snapshot entity kinds", 422)
         with self.store.router.transaction():
@@ -223,6 +239,8 @@ class Journal:
                         if row[0] == "agent"
                         else DeviceProjection
                         if row[0] == "device"
+                        else DeliveryProjection
+                        if row[0] == "delivery"
                         else ENTITIES[row[0]][1]
                     )
                     entity = model.model_validate_json(row[2])

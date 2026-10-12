@@ -111,6 +111,29 @@ async def test_import_retry_no_duplicate_items(graph):
         planner.commit(ws.id, proposed["id"], {**body, "command_id": identity()}, HUMAN)
 
 
+def test_multirequirement_task_needs_explicit_coverage():
+    from local_ai_router.workbench.planning import Planning
+
+    node = TaskNode(id="one", title="One", objective="One", acceptance_criteria=["One"], expected_artifacts=["one.py"])
+    with pytest.raises(WorkbenchError, match="actual requirement"):
+        Planning.coverage(node, ["R1", "R2"])
+    node.requirement_ids = ["R2"]
+    assert Planning.coverage(node, ["R1", "R2"]) == ["R2"]
+
+
+async def test_selected_import_keeps_backlog_and_requires_dependencies(graph):
+    planner, ws, _, _ = graph
+    proposed = preview(graph)
+    ids = [entry["proposal_id"] for entry in proposed["proposal"]["items"]]
+    with pytest.raises(WorkbenchError, match="upstream"):
+        commit(graph, proposed, actions={ids[0]: "skip", ids[1]: "create"})
+    assert not planner.store.db.execute("SELECT 1 FROM wb_work_items").fetchone()
+    result, _ = commit(graph, proposed, actions={ids[0]: "create", ids[1]: "skip"})
+    assert len(result.body["items"]) == 1
+    assert planner.store.db.execute("SELECT status FROM wb_work_items").fetchone()[0] == "BACKLOG"
+    assert not planner.store.db.execute("SELECT 1 FROM wb_attempts").fetchone()
+
+
 async def test_field_mapping_and_requirement_coverage(graph):
     planner, ws, _, prd = graph
     proposed = preview(graph)

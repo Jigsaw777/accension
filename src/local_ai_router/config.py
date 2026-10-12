@@ -322,6 +322,16 @@ class Settings(Strict):
         for model in self.models:
             if model.provider not in self.providers:
                 raise ValueError("Unknown provider for " + model.id)
+            provider = self.providers[model.provider]
+            if provider.kind == "connector" and (
+                {"repairer" if role == "repair" else role for role in model.roles}
+                - {"repairer" if role == "repair" else role for role in provider.connector.roles}
+                or not model.supports_code
+                or model.supports_streaming
+            ):
+                raise ValueError(
+                    "Connector models require explicit supported executor/repair roles, code and no streaming"
+                )
         for provider in self.providers.values():
             validate_endpoint(provider, self.port)
         for endpoint in self.discovery.local_endpoints.values():

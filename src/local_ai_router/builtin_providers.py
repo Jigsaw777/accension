@@ -353,6 +353,7 @@ def builtins():
         ("llamacpp", "llama.cpp server", "http://127.0.0.1:8080/v1", ["openai_chat"], http, True),
         ("mcp", "Stdio MCP inference", "", ["mcp"], configured, True),
         ("mock", "Deterministic test fixture", "", ["mock"], configured, True),
+        ("connector", "External proposal worker", "", ["connector_v1"], configured, False),
     ]
     result = {}
     for name, label, endpoint, protocols, inventory, local in entries:

@@ -144,3 +144,81 @@ async def test_lan_never_exposes_v1_admin_or_secrets(lan):
     assert public.status_code == 200
     assert str(runtime.engine.settings.home) not in public.text and runtime.engine.settings.token not in public.text
     assert all(not route.path.startswith(("/ui", "/v1", "/router", "/mcp")) for route in app.routes)
+
+
+async def test_new_remote_reads_share_scope_and_live_session_boundary(lan):
+    from test_workbench_agents import definition
+
+    from local_ai_router.workbench.store import now
+
+    runtime, ws, project, _, client = lan
+    agent = runtime.agents.configure(definition(ws), HUMAN).body
+    item = runtime.service.create(
+        "work_item",
+        {
+            "command_id": identity(),
+            "workspace_id": ws.id,
+            "project_id": project["id"],
+            "title": "Scoped history",
+            "execution_kind": "MANUAL",
+        },
+        HUMAN,
+    ).body
+    device = pair(runtime, ws, ["workspace.read"], True)
+    client.cookies.set("accension_device", device["token"])
+    end = now()
+    paths = [
+        "/board",
+        "/board/columns/BACKLOG",
+        "/model-options?purpose=executor",
+        "/agents/" + agent["id"],
+        "/agents/" + agent["id"] + "/activity",
+        "/agents/" + agent["id"] + "/metrics?from=" + str(end - 86400000) + "&to=" + str(end),
+        "/work-items/" + item["id"] + "/activity",
+        "/operations",
+    ]
+    for path in paths:
+        url = LAN_PREFIX + path + ("&" if "?" in path else "?") + "workspace_id=" + ws.id
+        response = await client.get(url)
+        assert response.status_code == 200, (path, response.text)
+        assert str(runtime.engine.settings.home) not in response.text
+        assert runtime.engine.settings.token not in response.text
+        assert "allowed_workspaces" not in response.text and "repository_permissions" not in response.text
+        wrong = await client.get(url.replace(ws.id, identity()))
+        assert wrong.status_code in {403, 404} and "Scoped history" not in wrong.text
+        for headers in ({"host": "evil.test"}, {"origin": "https://evil.test"}, {"sec-fetch-site": "cross-site"}):
+            assert (await client.get(url, headers=headers)).status_code == 403
+    runtime.devices.revoke(ws.id, device["device_id"], 1, HUMAN)
+    for path in paths:
+        assert (await client.get(LAN_PREFIX + path, params={"workspace_id": ws.id})).status_code == 401
+
+
+async def test_new_remote_mutations_require_csrf_and_cannot_grant_machine_human_authority(lan):
+    runtime, ws, _, _, client = lan
+    device = pair(runtime, ws, ["workspace.read", "execution.request"], True)
+    client.cookies.set("accension_device", device["token"])
+    routes = [
+        "/planning/quote",
+        "/prds/generate",
+        "/prds/" + identity() + "/decompose",
+        "/prds/" + identity() + "/reconcile",
+        "/plan-imports",
+        "/plan-imports/" + identity() + "/commit",
+        "/plan-imports/" + identity() + "/reconcile-commit",
+        "/delivery-batches/preview",
+        "/delivery-batches",
+        "/delivery-batches/" + identity() + "/commands",
+        "/delivery-batches/" + identity() + "/reapprove",
+    ]
+    for path in routes:
+        assert (await client.post(LAN_PREFIX + path, json={"workspace_id": ws.id})).status_code == 403
+    client.cookies.clear()
+    machine = pair(runtime, ws, ["workspace.read", "execution.request"])
+    body = {"workspace_id": ws.id, "command_id": identity(), "preview": "invalid", "selection_hash": "0" * 64}
+    response = await client.post(
+        LAN_PREFIX + "/delivery-batches",
+        json=body,
+        headers={"authorization": "Bearer " + machine["token"], "x-accension-human": "true"},
+    )
+    assert response.status_code == 403
+    assert runtime.service.store.db.execute("SELECT COUNT(*) FROM wb_delivery_batches").fetchone()[0] == 0

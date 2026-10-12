@@ -193,7 +193,24 @@ class Store:
             for r in self.db.execute("SELECT * FROM traces WHERE request=? ORDER BY seq", (request,))
         ]
 
-    def reserve(self, request, session, role, model, estimate, limit, task_id=None):
+    def reserve(
+        self,
+        request,
+        session,
+        role,
+        model,
+        estimate,
+        limit,
+        task_id=None,
+        *,
+        occurred_at=None,
+        provider_id=None,
+        model_snapshot=None,
+    ):
+        if model_snapshot is not None:
+            from .schema import CallModelSnapshot
+
+            model_snapshot = CallModelSnapshot.model_validate(model_snapshot).model_dump_json()
         b = self.settings.budgets
         day = datetime.now(timezone.utc).date().isoformat()
         if estimate < 0 or not math.isfinite(estimate):
@@ -236,6 +253,10 @@ class Store:
                 (call, request, session, day, role, model.id, int(model.tier == 4), estimate, "reserved", "{}"),
             )
             self.active_calls.add(call)
+            self.db.execute(
+                "UPDATE calls SET occurred_at=?,provider_id=?,model_snapshot_json=? WHERE id=?",
+                (occurred_at, provider_id, model_snapshot, call),
+            )
             if task_id:
                 self.db.execute("INSERT INTO task_calls VALUES(?,?)", (call, task_id))
         self.economics("reserve", call, request, session, role, model, task_id, estimate)
@@ -256,15 +277,58 @@ class Store:
             (task_id,),
         ).fetchone()[0]
 
-    def settle(self, call, cost, usage, latency, failed=False):
+    def settle(
+        self,
+        call,
+        cost,
+        usage,
+        latency,
+        failed=False,
+        *,
+        usage_source=None,
+        cost_source=None,
+        reported_usage_fields=None,
+    ):
+        if usage_source is not None and usage_source not in {
+            "provider_reported",
+            "connector_reported",
+            "estimated",
+            "unknown",
+            "legacy_unknown",
+        }:
+            raise ValueError("Invalid usage provenance")
+        if cost_source is not None and cost_source not in {
+            "priced_usage",
+            "budget_estimate",
+            "connector_reported",
+            "known_zero_no_send",
+            "unknown",
+            "legacy_unknown",
+        }:
+            raise ValueError("Invalid cost provenance")
+        if reported_usage_fields is not None and (
+            len(reported_usage_fields) > 4
+            or not set(reported_usage_fields)
+            <= {"input_tokens", "output_tokens", "cached_tokens", "cache_write_tokens"}
+        ):
+            raise ValueError("Invalid reported usage fields")
         # Uncertain/failed calls retain their reservation; a timeout may still be billable.
-        with self.lock:
+        with self.transaction():
             self.db.execute(
                 "UPDATE calls SET cost=COALESCE(?,cost), state=?, usage=?, latency=? WHERE id=?",
                 (cost, "uncertain" if failed else "complete", json.dumps(usage), latency, call),
             )
-            self.active_calls.discard(call)
+            self.db.execute(
+                "UPDATE calls SET usage_source=COALESCE(?,usage_source),cost_source=COALESCE(?,cost_source),reported_usage_fields_json=COALESCE(?,reported_usage_fields_json) WHERE id=?",
+                (
+                    usage_source,
+                    cost_source,
+                    json.dumps(reported_usage_fields) if reported_usage_fields is not None else None,
+                    call,
+                ),
+            )
             self.db.execute("UPDATE egress SET state=? WHERE call=?", ("uncertain" if failed else "sent", call))
+        self.active_calls.discard(call)
         self.economics("settle", call, cost, usage, failed)
         row = self.db.execute("SELECT request,session,model FROM calls WHERE id=?", (call,)).fetchone()
         if row:

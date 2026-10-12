@@ -28,9 +28,17 @@ def table_digests(db):
     result = {}
     tables = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     for (table,) in tables.fetchall():
+        # Additive v8 columns have their own tests; preserve every original cell here.
+        added = (
+            set(db_migrations.FEATURE_COLUMNS.get(table, set()))
+            if table in {"calls", "wb_attempts", "wb_agent_definitions"}
+            else set()
+        )
+        added |= db_migrations.DELIVERY_COLUMNS.get(table, set()) if table == "wb_attempts" else set()
+        columns = [row[1] for row in db.execute(f'PRAGMA table_info("{table}")') if row[1] not in added]
         rows = [
             json.dumps(tuple(row), ensure_ascii=False, separators=(",", ":"), default=str)
-            for row in db.execute(f'SELECT * FROM "{table}"')
+            for row in db.execute(f'SELECT {",".join(columns)} FROM "{table}"')
         ]
         result[table] = (len(rows), hashlib.sha256("\n".join(sorted(rows)).encode()).hexdigest())
     return result
@@ -39,6 +47,182 @@ def table_digests(db):
 def snapshot(db):
     schema = list(db.execute("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"))
     return db.execute("PRAGMA user_version").fetchone()[0], [tuple(row) for row in schema], table_digests(db)
+
+
+def demote_feature_schema(db):
+    demote_delivery_schema(db)
+    for table in ("wb_attempt_call_facts", "wb_attempt_facts", "wb_activity_entries", "wb_agent_workspaces"):
+        db.execute("DROP TABLE " + table)
+    db.execute("DROP INDEX wb_board_active")
+    for table in ("calls", "wb_attempts", "wb_agent_definitions"):
+        for column in db_migrations.FEATURE_COLUMNS[table]:
+            db.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+    db.execute("PRAGMA user_version=7")
+
+
+def demote_delivery_schema(db):
+    for table in ("wb_delivery_reservations", "wb_delivery_grants", "wb_delivery_members"):
+        db.execute("DROP TABLE " + table)
+    db.execute("ALTER TABLE wb_attempts DROP COLUMN batch_id")
+    db.execute("DROP TABLE wb_delivery_batches")
+    db.execute("PRAGMA user_version=8")
+
+
+def test_v7_feature_upgrade_preserves_rows_and_unknown_defaults(settings):
+    from test_workbench_agents import HUMAN, definition
+
+    from local_ai_router.workbench.agents import Agents
+    from local_ai_router.workbench.service import WorkbenchService
+
+    store = Store(settings)
+    service = WorkbenchService(store)
+    workspace = service.seed_defaults()
+    runtime = SimpleNamespace(service=service, engine=SimpleNamespace(settings=settings), execution=None, started=False)
+    agent = Agents(runtime).configure(definition(workspace), HUMAN).body
+    store.db.execute(
+        "INSERT INTO calls(id,request,model,cost,state,usage) VALUES('legacy-call','legacy','old',0.2,'complete','{}')"
+    )
+    demote_feature_schema(store.db)
+    before = table_digests(store.db)
+    store.close()
+    upgraded = Store(settings)
+    try:
+        after = table_digests(upgraded.db)
+        assert {table: after[table] for table in before} == before
+        row = dict(upgraded.db.execute("SELECT * FROM calls WHERE id='legacy-call'").fetchone())
+        assert row["occurred_at"] is None and row["model_snapshot_json"] is None and row["provider_id"] is None
+        assert row["usage_source"] == row["cost_source"] == "legacy_unknown"
+        bindings = json.loads(
+            upgraded.db.execute(
+                "SELECT model_bindings_json FROM wb_agent_definitions WHERE id=?", (agent["id"],)
+            ).fetchone()[0]
+        )
+        assert all(
+            value == {"mode": "auto", "primary_model_id": None, "fallback_model_ids": []} for value in bindings.values()
+        )
+        assert list(map(tuple, upgraded.db.execute("SELECT * FROM wb_agent_workspaces"))) == [
+            (agent["id"], workspace.id)
+        ]
+        assert upgraded.db.execute("SELECT COUNT(*) FROM wb_attempt_facts").fetchone()[0] == 0
+        assert upgraded.db.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert upgraded.db.execute("SELECT COUNT(*) FROM wb_delivery_batches").fetchone()[0] == 0
+    finally:
+        upgraded.close()
+    reopened = Store(settings)
+    reopened.close()
+    assert len(list((settings.state / "backups").glob("*.sqlite3"))) == 1
+
+
+@pytest.mark.parametrize("boundary", [0, 1, 8, 10, 14, 17, "version"])
+def test_v8_migration_atomic(settings, boundary):
+    store = Store(settings)
+    demote_feature_schema(store.db)
+    before = snapshot(store.db)
+    path = store.path if hasattr(store, "path") else settings.state / "router.sqlite3"
+    store.close()
+    target = (
+        f"PRAGMA user_version={db_migrations.SUPPORTED_VERSION}"
+        if boundary == "version"
+        else db_migrations.FEATURE_STATEMENTS[boundary]
+    )
+
+    class Fault(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql == target:
+                raise sqlite3.OperationalError("injected v8 interruption")
+            return super().execute(sql, *args, **kwargs)
+
+    with closing(sqlite3.connect(path, isolation_level=None, factory=Fault)) as db:
+        with pytest.raises(db_migrations.DatabaseMigrationError, match="no partial"):
+            db_migrations.initialize_database(db, path)
+    with closing(sqlite3.connect(path)) as db:
+        assert snapshot(db) == before
+    Store(settings).close()
+
+
+@pytest.mark.parametrize("boundary", [0, 1, 2, 4, 6, "version"])
+def test_v9_migration_atomic(settings, boundary):
+    store = Store(settings)
+    demote_delivery_schema(store.db)
+    before = snapshot(store.db)
+    path = settings.state / "router.sqlite3"
+    store.close()
+    target = (
+        f"PRAGMA user_version={db_migrations.SUPPORTED_VERSION}"
+        if boundary == "version"
+        else db_migrations.DELIVERY_STATEMENTS[boundary]
+    )
+
+    class Fault(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):
+            if sql == target:
+                raise sqlite3.OperationalError("injected v9 interruption")
+            return super().execute(sql, *args, **kwargs)
+
+    with closing(sqlite3.connect(path, isolation_level=None, factory=Fault)) as db:
+        with pytest.raises(db_migrations.DatabaseMigrationError, match="no partial"):
+            db_migrations.initialize_database(db, path)
+    with closing(sqlite3.connect(path)) as db:
+        assert snapshot(db) == before
+    upgraded = Store(settings)
+    assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == 9
+    upgraded.close()
+
+
+def test_malformed_binding_json_rejected(settings):
+    from test_workbench_agents import HUMAN, definition
+
+    from local_ai_router.workbench.agents import Agents
+    from local_ai_router.workbench.service import WorkbenchService
+    from local_ai_router.workbench.store import WorkbenchError
+
+    store = Store(settings)
+    service = WorkbenchService(store)
+    runtime = SimpleNamespace(service=service, engine=SimpleNamespace(settings=settings), execution=None, started=False)
+    agents = Agents(runtime)
+    workspace = service.seed_defaults()
+    created = agents.configure(definition(workspace), HUMAN).body
+    store.db.execute(
+        "UPDATE wb_agent_definitions SET model_bindings_json=? WHERE id=?",
+        ('{"executor":{"mode":"pinned"}}', created["id"]),
+    )
+    with pytest.raises(WorkbenchError, match="Invalid persisted"):
+        agents.definition(created["id"])
+    store.close()
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"mode": "pinned"},
+        {"mode": "auto", "primary_model_id": "model"},
+        {"mode": "pinned", "primary_model_id": "model", "fallback_model_ids": ["model"]},
+        {"mode": "pinned", "primary_model_id": "model", "fallback_model_ids": ["other", "other"]},
+    ],
+)
+def test_invalid_model_selections_rejected(selection):
+    from pydantic import ValidationError
+
+    from local_ai_router.workbench.schema import ModelSelection
+
+    with pytest.raises(ValidationError):
+        ModelSelection.model_validate(selection)
+
+
+def test_board_active_index_is_selected(settings):
+    store = Store(settings)
+    try:
+        plan = [
+            row[3]
+            for row in store.db.execute(
+                "EXPLAIN QUERY PLAN SELECT id FROM wb_work_items WHERE workspace_id=? AND status=? AND archived_at IS NULL ORDER BY priority,id LIMIT 20",
+                ("synthetic", "BACKLOG"),
+            )
+        ]
+        assert any("wb_board_active" in row for row in plan)
+        assert not any("TEMP B-TREE" in row for row in plan)
+    finally:
+        store.close()
 
 
 def legacy_database(settings, *, version=0, complete=False):
@@ -105,7 +289,11 @@ def test_legacy_v0_initial_schema_is_supported(settings):
         before = table_digests(db)
     store = Store(settings)
     try:
-        assert tuple(store.db.execute("SELECT * FROM calls").fetchone()) == (*before_calls, 0.0)
+        assert tuple(
+            store.db.execute(
+                "SELECT id,request,session,day,role,model,frontier,cost,state,usage,latency FROM calls"
+            ).fetchone()
+        ) == (*before_calls, 0.0)
         after = table_digests(store.db)
         assert all(after[table] == digest for table, digest in before.items() if table != "calls")
         assert store.db.execute("PRAGMA user_version").fetchone()[0] == db_migrations.SUPPORTED_VERSION
@@ -170,6 +358,7 @@ def test_v6_journal_upgrade_preserves_rows_and_verified_backup(settings):
         {"command_id": identity(), "workspace_id": workspace.id, "key": "OLD", "name": "Legacy journal"},
         HUMAN,
     )
+    demote_feature_schema(store.db)
     store.db.execute("ALTER TABLE wb_entity_versions RENAME TO old_versions")
     statement = next(s for s in db_migrations.WORKBENCH_STATEMENTS if s.startswith("CREATE TABLE wb_entity_versions("))
     store.db.execute(statement)
@@ -180,8 +369,9 @@ def test_v6_journal_upgrade_preserves_rows_and_verified_backup(settings):
     store.close()
     upgraded = Store(settings)
     try:
-        assert table_digests(upgraded.db) == before
-        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == 7
+        after = table_digests(upgraded.db)
+        assert {table: after[table] for table in before} == before
+        assert upgraded.db.execute("PRAGMA user_version").fetchone()[0] == db_migrations.SUPPORTED_VERSION
         assert upgraded.db.execute("PRAGMA foreign_key_check").fetchall() == []
         with pytest.raises(sqlite3.IntegrityError):
             upgraded.db.execute("INSERT INTO wb_entity_versions SELECT * FROM wb_entity_versions LIMIT 1")

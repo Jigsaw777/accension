@@ -200,22 +200,172 @@ def install(mcp, settings, shared_engine=None):
         return service().item_command(workspace_id, item_id, body, principal).body
 
     @mcp.tool()
-    async def list_agents(workspace_id: UUID) -> dict:
+    async def list_agents(workspace_id: UUID, limit: int = 50, cursor: str | None = None, query: str = "") -> dict:
         """Read configured agents and observed worker availability; no provider calls."""
         if shared_engine is None:
-            return await forward("GET", "/agents", params={"workspace_id": workspace_id})
-        return {"items": service().agents.list(workspace_id, principal)}
+            return await forward(
+                "GET",
+                "/agents",
+                params={
+                    "workspace_id": workspace_id,
+                    "limit": limit,
+                    "query": query,
+                    **({"cursor": cursor} if cursor else {}),
+                },
+            )
+        return service().agents.list_page(workspace_id, principal, limit=limit, cursor=cursor, query=query)
+
+    @mcp.tool()
+    async def get_agent_profile(workspace_id: UUID, agent_id: UUID) -> dict:
+        """Read scoped configuration, current work and connector observations; no inference."""
+        if shared_engine is None:
+            return await forward("GET", "/agents/" + agent_id, params={"workspace_id": workspace_id})
+        return service().agents.profile(workspace_id, agent_id, principal)
 
     @mcp.tool()
     async def get_agent_status(workspace_id: UUID, agent_id: UUID) -> dict:
         """Read one scoped agent's real heartbeat state; no inference."""
+        result = await get_agent_profile(workspace_id, agent_id)
+        return {**result["definition"], "load": result["load"], "capacity": result["capacity"]}
+
+    @mcp.tool()
+    async def get_workbench_board(
+        workspace_id: UUID,
+        project_id: UUID | None = None,
+        query: str = "",
+        limit: int = 20,
+        state: str | None = None,
+        cursor: str | None = None,
+    ) -> dict:
+        """Read compact scoped columns with bounded signed pagination; no execution."""
+        from .board import BoardQueries
+        from .schema import BoardQuery
+
+        fields = {
+            "workspace_id": workspace_id,
+            "query": query,
+            "limit": limit,
+            **({"project_id": project_id} if project_id else {}),
+        }
+        if shared_engine is None:
+            return await forward(
+                "GET",
+                "/board" + ("/columns/" + state if state else ""),
+                params={**fields, **({"cursor": cursor} if cursor else {})},
+            )
+        service()
+        return BoardQueries(shared_engine.workbench_runtime).page(
+            BoardQuery.model_validate(fields), principal, state=state, cursor=cursor
+        )
+
+    @mcp.tool()
+    async def get_workbench_timeline(
+        workspace_id: UUID,
+        entity_id: UUID,
+        entity_type: str = "work_item",
+        project_id: UUID | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict:
+        """Read bounded redacted ticket or agent history; no provider calls."""
+        from .activity import timeline
         from .store import WorkbenchError
 
-        result = await list_agents(workspace_id)
-        found = next((a for a in result["items"] if a["id"] == agent_id), None)
-        if found is None:
-            raise WorkbenchError("NOT_FOUND", "Agent not found", 404)
-        return found
+        if entity_type not in {"work_item", "agent"}:
+            raise WorkbenchError("INVALID_INPUT", "Expected work_item or agent", 422)
+        fields = {
+            "workspace_id": workspace_id,
+            "limit": limit,
+            **({"project_id": project_id} if project_id else {}),
+            **({"cursor": cursor} if cursor else {}),
+        }
+        if shared_engine is None:
+            return await forward(
+                "GET",
+                ("/agents/" if entity_type == "agent" else "/work-items/") + entity_id + "/activity",
+                params=fields,
+            )
+        service()
+        return timeline(
+            shared_engine.workbench_runtime,
+            workspace_id,
+            principal,
+            limit=limit,
+            cursor=cursor,
+            project_id=project_id,
+            **{"agent_id" if entity_type == "agent" else "item_id": entity_id},
+        )
+
+    @mcp.tool()
+    async def get_agent_metrics(
+        workspace_id: UUID,
+        agent_id: UUID,
+        start: int,
+        end: int,
+        bucket: str = "day",
+        project_id: UUID | None = None,
+        execution_kind: str | None = None,
+    ) -> dict:
+        """Read measured denominators and known or unknown costs in an explicit time window."""
+        from .metrics import agent_metrics
+
+        if shared_engine is None:
+            return await forward(
+                "GET",
+                "/agents/" + agent_id + "/metrics",
+                params={
+                    "workspace_id": workspace_id,
+                    "from": start,
+                    "to": end,
+                    "bucket": bucket,
+                    **({"project_id": project_id} if project_id else {}),
+                    **({"execution_kind": execution_kind} if execution_kind else {}),
+                },
+            )
+        service()
+        return agent_metrics(
+            shared_engine.workbench_runtime,
+            workspace_id,
+            agent_id,
+            principal,
+            start=start,
+            end=end,
+            bucket=bucket,
+            project_id=project_id,
+            execution_kind=execution_kind,
+        )
+
+    @mcp.tool()
+    async def get_workbench_model_options(input: dict, cursor: str | None = None) -> dict:
+        """List eligible registered models; never discovers providers or invokes inference."""
+        from .model_options import model_options
+
+        if shared_engine is None:
+            return await forward("GET", "/model-options", params={**input, **({"cursor": cursor} if cursor else {})})
+        service()
+        return model_options(shared_engine.workbench_runtime, input, principal, cursor=cursor)
+
+    @mcp.tool()
+    async def preview_feature_delivery(input: dict) -> dict:
+        """Preview current imported feature contracts without granting approval or execution."""
+        if shared_engine is None:
+            return await forward("POST", "/delivery-batches/preview", body=input)
+        service()
+        return shared_engine.workbench_runtime.delivery.preview(input, principal)
+
+    @mcp.tool()
+    async def get_feature_delivery(workspace_id: UUID, batch_id: UUID, limit: int = 50, cursor: str = "") -> dict:
+        """Read approved batch progress; completion remains subject to host review."""
+        if shared_engine is None:
+            return await forward(
+                "GET",
+                "/delivery-batches/" + batch_id,
+                params={"workspace_id": workspace_id, "limit": limit, "cursor": cursor},
+            )
+        service()
+        return shared_engine.workbench_runtime.delivery.get(
+            workspace_id, batch_id, principal, limit=limit, after=cursor
+        )
 
     @mcp.tool()
     async def quote_workbench_planning(input: dict) -> dict:

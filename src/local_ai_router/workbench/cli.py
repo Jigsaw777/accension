@@ -61,8 +61,21 @@ def add_parsers(command):
             "manual-submit",
             "request-review",
         ],
-        "workbench": ["status", "open", "pause", "resume", "events", "privacy", "operation"],
-        "agent": ["list", "status", "configure"],
+        "workbench": [
+            "status",
+            "open",
+            "pause",
+            "resume",
+            "events",
+            "privacy",
+            "operation",
+            "operations",
+            "board",
+            "models",
+            "delivery",
+            "delivery-preview",
+        ],
+        "agent": ["list", "status", "configure", "activity", "metrics"],
         "template": ["list", "preview", "import", "export"],
     }
     for noun in NOUNS:
@@ -90,6 +103,12 @@ def add_parsers(command):
             "budget",
             "requirement-file",
             "action",
+            "query",
+            "from",
+            "to",
+            "bucket",
+            "execution-kind",
+            "purpose",
         ):
             parser.add_argument("--" + option)
         parser.add_argument("--expected-revision", type=int)
@@ -148,14 +167,25 @@ async def dispatch(args, settings, *, client=None):
     try:
         noun, action = args.command, args.action
         if noun == "agent":
-            if action in {"list", "status"}:
-                result = await client.request("GET", "/agents", params=params)
+            if action in {"list", "status", "activity", "metrics"}:
+                params.update(limit=args.limit)
+                for key in ("cursor", "query", "bucket", "from", "to", "execution_kind"):
+                    if getattr(args, key):
+                        params[key] = getattr(args, key)
+                if args.project:
+                    params["project_id"] = args.project
                 if action == "status":
-                    agent = next((a for a in result["items"] if a["id"] == args.value), None)
-                    if agent is None:
-                        raise WorkbenchError("NOT_FOUND", "Agent not found", 404)
-                    return agent
-                return result
+                    params.pop("limit")
+                path = "/agents" if action == "list" else "/agents/" + args.value
+                if action in {"activity", "metrics"}:
+                    path += "/" + action
+                try:
+                    result = await client.request("GET", path, params=params)
+                except WorkbenchError as exc:
+                    if action == "status" and exc.code == "NOT_FOUND":
+                        raise WorkbenchError("NOT_FOUND", "Agent not found", 404) from exc
+                    raise
+                return result["definition"] if action == "status" else result
             body = {**input_file(args.file), "command_id": command_id}
             if args.expected_revision is not None:
                 body["expected_revision"] = args.expected_revision
@@ -164,6 +194,28 @@ async def dispatch(args, settings, *, client=None):
             )
             return {**result, "command_id": command_id}
         if noun == "workbench":
+            if action in {"board", "models", "operations", "delivery", "delivery-preview"}:
+                if action == "delivery-preview":
+                    body = input_file(args.file)
+                    if args.workspace:
+                        body["workspace_id"] = args.workspace
+                    return await client.request("POST", "/delivery-batches/preview", body=body)
+                params.update(limit=args.limit)
+                for key, value in (
+                    ("project_id", args.project),
+                    ("query", args.query),
+                    ("cursor", args.cursor),
+                    ("purpose", args.purpose),
+                ):
+                    if value:
+                        params[key] = value
+                path = {
+                    "board": "/board",
+                    "models": "/model-options",
+                    "operations": "/operations",
+                    "delivery": "/delivery-batches/" + (args.value or ""),
+                }[action]
+                return await client.request("GET", path, params=params)
             if action in {"pause", "resume"}:
                 target = args.project or args.workspace
                 result = await client.request(

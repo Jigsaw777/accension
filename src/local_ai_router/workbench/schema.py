@@ -573,6 +573,107 @@ class UpdateComment(CommentFields, Mutation):
     pass
 
 
+class ModelSelection(Strict):
+    mode: Literal["auto", "pinned"] = "auto"
+    primary_model_id: Name | None = None
+    fallback_model_ids: Annotated[list[Name], Field(max_length=4)] = []
+
+    @model_validator(mode="after")
+    def valid_selection(self):
+        if self.mode == "auto" and (self.primary_model_id is not None or self.fallback_model_ids):
+            raise ValueError("Auto selection cannot pin models")
+        if self.mode == "pinned" and self.primary_model_id is None:
+            raise ValueError("Pinned selection requires a primary model")
+        if (
+            len(set(self.fallback_model_ids)) != len(self.fallback_model_ids)
+            or self.primary_model_id in self.fallback_model_ids
+        ):
+            raise ValueError("Fallback models must be unique and exclude the primary")
+        return self
+
+
+class ModelOptionsQuery(Strict):
+    workspace_id: UUID
+    project_id: UUID | None = None
+    purpose: Literal["planner", "executor", "repairer", "repair", "reviewer"] = "executor"
+    adapter: Identifier = "engine"
+    budget: USD | None = None
+    query: Annotated[str, Field(strict=True, max_length=200)] = ""
+    limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 50
+
+
+class ModelOption(Strict):
+    id: Name
+    provider: Name
+    deployment: Name
+    locality: Literal["local", "cloud", "unknown"]
+    enabled: bool
+    eligible: bool
+    reason_codes: Identifiers
+    pricing_status: Identifier
+    estimated_max_cost: Annotated[float, Field(ge=0, allow_inf_nan=False)] | None = None
+
+
+class BoardQuery(Strict):
+    workspace_id: UUID
+    project_id: UUID | None = None
+    query: Annotated[str, Field(strict=True, max_length=200)] = ""
+    agent_id: UUID | None = None
+    priority: Priority | None = None
+    type: WorkItemType | None = None
+    limit: Annotated[int, Field(strict=True, ge=1, le=50)] = 20
+    states: Annotated[list[WorkItemStatus], Field(min_length=1, max_length=11)] = list(WorkItemStatus)
+
+    @model_validator(mode="after")
+    def unique_states(self):
+        if len(set(self.states)) != len(self.states):
+            raise ValueError("Board states must be unique")
+        return self
+
+
+class CardProjection(Strict):
+    id: UUID
+    display_key: Name
+    title: Name
+    status: WorkItemStatus
+    revision: Revision
+    contract_revision: Revision
+    type: WorkItemType
+    priority: Priority
+    assigned_agent_id: UUID | None = None
+    assigned_agent_name: Name | None = None
+    assignment_id: UUID | None = None
+    active_attempt_id: UUID | None = None
+    observed_stage: Identifier | None = None
+    stage_observed_at: Annotated[int, Field(strict=True, ge=0)] | None = None
+    reason_code: Identifier | None = None
+    dependency_count: Annotated[int, Field(strict=True, ge=0)] = 0
+    blocker_count: Annotated[int, Field(strict=True, ge=0)] = 0
+    review_needed: bool = False
+
+
+class BoardColumn(Strict):
+    state: WorkItemStatus
+    count: Annotated[int, Field(strict=True, ge=0)]
+    items: Annotated[list[CardProjection], Field(max_length=50)]
+    has_more: bool
+    next_cursor: Annotated[str, Field(max_length=4000)] | None = None
+
+
+class BoardPage(Strict):
+    workspace_id: UUID
+    project_id: UUID | None
+    query_hash: Hash
+    sequence: Annotated[int, Field(strict=True, ge=0)]
+    columns: Annotated[list[BoardColumn], Field(max_length=11)]
+
+
+class ModelBindings(Strict):
+    executor: ModelSelection = Field(default_factory=ModelSelection)
+    repairer: ModelSelection = Field(default_factory=ModelSelection)
+    reviewer: ModelSelection = Field(default_factory=ModelSelection)
+
+
 class PlanningInput(Strict):
     workspace_id: UUID
     project_id: UUID
@@ -587,11 +688,49 @@ class PlanningInput(Strict):
     template_version: Revision = 1
     allowed_paths: Paths = []
     requirement_groups: Annotated[list[Identifiers], Field(max_length=100)] = []
+    model_selection: ModelSelection = Field(default_factory=ModelSelection)
 
 
 class PlanningCommand(PlanningInput):
     command_id: UUID
     quote: Annotated[str, Field(max_length=4000)]
+
+
+class DeliveryPreview(Strict):
+    workspace_id: UUID
+    project_id: UUID
+    import_id: UUID
+    item_ids: Annotated[list[UUID], Field(min_length=1, max_length=1000)]
+    contract_revisions: Annotated[dict[UUID, Revision], Field(max_length=1000)]
+    agents: Annotated[dict[UUID, UUID], Field(max_length=1000)]
+    budget: USD
+    expires_at: Timestamp
+
+    @model_validator(mode="after")
+    def complete_selection(self):
+        if (
+            len(set(self.item_ids)) != len(self.item_ids)
+            or set(self.contract_revisions) != set(self.item_ids)
+            or set(self.agents) != set(self.item_ids)
+        ):
+            raise ValueError("Delivery requires unique items with exact revisions and agent selection")
+        return self
+
+
+class DeliveryConfirm(Strict):
+    command_id: UUID
+    workspace_id: UUID
+    preview: Annotated[str, Field(max_length=500000)]
+    selection_hash: Hash
+
+
+class DeliveryReapprove(DeliveryConfirm):
+    expected_revision: Revision
+
+
+class DeliveryCommand(Mutation):
+    action: Literal["pause", "resume", "cancel"]
+    reason: Entry
 
 
 class ImportPreview(Strict):
@@ -610,7 +749,7 @@ class ImportPreview(Strict):
 class ImportCommit(Mutation):
     source_hash: Hash
     actions: Annotated[
-        dict[Identifier, Literal["create", "update", "keep", "archive", "successor"]], Field(max_length=2000)
+        dict[Identifier, Literal["create", "update", "keep", "archive", "successor", "skip"]], Field(max_length=2000)
     ] = {}
     item_revisions: Annotated[dict[UUID, Revision], Field(max_length=2000)] = {}
 
@@ -662,6 +801,7 @@ class AgentFields(Strict):
     ]
     privacy_policy: InferencePolicy = "LOCAL_ONLY"
     concurrency_limit: Annotated[int, Field(strict=True, ge=1, le=16)] = 1
+    model_bindings: ModelBindings = Field(default_factory=ModelBindings)
 
 
 class AgentDefinition(AgentFields, Audit):
@@ -708,6 +848,7 @@ class WorkExecutionContract(Strict):
     assignment_id: UUID
     agent_definition_id: UUID
     agent_definition_revision: Revision
+    agent_name: Name | None = None
     policy_revision_hash: Hash
     repository_ref: Hash
     title: Name
@@ -718,12 +859,14 @@ class WorkExecutionContract(Strict):
     quality: Quality
     review_policy: ReviewPolicy
     model_roles: Annotated[list[Literal["executor", "repairer", "reviewer"]], Field(max_length=3)]
+    model_bindings: ModelBindings = Field(default_factory=ModelBindings)
     tools: Identifiers
     skill_hashes: Annotated[dict[Identifier, Hash], Field(max_length=100)] = {}
     grant_id: UUID | None
     risk: Score
     complexity: Score
     dependency_evidence: Annotated[list[dict], Field(max_length=1000)] = []
+    batch_id: UUID | None = None
 
 
 class DeviceProjection(Strict):
@@ -734,12 +877,21 @@ class DeviceProjection(Strict):
     state: Identifier
 
 
+class DeliveryProjection(Strict):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    revision: Revision
+    state: Literal["APPROVED", "RUNNING", "PAUSED", "NEEDS_REVIEW", "CANCELLED", "COMPLETED"]
+    updated_at: Timestamp
+
+
 class WorkbenchEvent(Strict):
     sequence: Annotated[int, Field(strict=True, ge=1)]
     event_id: UUID
     workspace_id: UUID
     entity_type: Literal[
-        "workspace", "project", "prd", "work_item", "comment", "operation", "plan_import", "agent", "device"
+        "workspace", "project", "prd", "work_item", "comment", "operation", "plan_import", "agent", "device", "delivery"
     ]
     entity_id: UUID
     entity_revision: Revision
@@ -750,7 +902,16 @@ class WorkbenchEvent(Strict):
     schema_version: Literal[1] = 1
     # Payloads are typed entity projections; credentials/command authority cannot enter them.
     payload: (
-        Workspace | Project | PRD | WorkItem | Comment | Operation | PlanImport | AgentProjection | DeviceProjection
+        Workspace
+        | Project
+        | PRD
+        | WorkItem
+        | Comment
+        | Operation
+        | PlanImport
+        | AgentProjection
+        | DeviceProjection
+        | DeliveryProjection
     )
 
     @model_validator(mode="after")
@@ -765,6 +926,7 @@ class WorkbenchEvent(Strict):
             "plan_import": PlanImport,
             "agent": AgentProjection,
             "device": DeviceProjection,
+            "delivery": DeliveryProjection,
         }[self.entity_type]
         if (
             not isinstance(self.payload, expected)

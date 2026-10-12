@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 import yaml
@@ -12,6 +13,14 @@ from local_ai_router.workbench.schema import ActorType, PRDSpec
 from local_ai_router.workbench.service import WorkbenchService
 from local_ai_router.workbench.store import WorkbenchError, identity
 from local_ai_router.workbench.templates import MAX_TEMPLATE_BYTES, builtins, get, load_template
+
+
+def test_public_feature_examples_validate():
+    from local_ai_router.workbench.schema import AgentCommand, PlanningInput
+
+    root = Path(__file__).resolve().parents[1] / "docs/examples"
+    AgentCommand.model_validate_json((root / "agent-models.json").read_text())
+    PlanningInput.model_validate_json((root / "feature-planning.json").read_text())
 
 
 def complete():

@@ -168,6 +168,19 @@ def test_corrupt_json_and_reference_diagnosed(wb):
     wb.db.execute("PRAGMA foreign_keys=ON")
     with pytest.raises(WorkbenchError, match="Project does not belong"):
         wb.get("work_item", ws.id, item.id)
+    with pytest.raises(WorkbenchError, match="Project does not belong"):
+        wb.list("work_item", ws.id)
+
+
+def test_page_reference_cache_does_not_survive_next_read(wb):
+    ws = workspace(wb)
+    p = project(wb, ws)
+    with wb.router.transaction():
+        wb.allocate_item(request(ws, p), "human")
+    assert len(wb.list("work_item", ws.id)) == 1
+    wb.db.execute("UPDATE wb_projects SET key='OTHER' WHERE id=?", (p.id,))
+    with pytest.raises(WorkbenchError, match="display key"):
+        wb.list("work_item", ws.id)
 
 
 def test_failed_insert_rolls_back_counter_and_scoped_prd(wb):

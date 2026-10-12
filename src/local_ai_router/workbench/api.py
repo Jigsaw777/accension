@@ -106,6 +106,51 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
     from .templates import load_template, register
 
     service = runtime.service
+    from .board import BoardQueries
+    from .schema import BoardQuery
+
+    boards = BoardQueries(runtime)
+
+    @transport
+    async def models_read(request: Request):
+        from .model_options import model_options
+
+        fields = dict(request.query_params)
+        cursor = fields.pop("cursor", None)
+        if "limit" in fields:
+            fields["limit"] = int(fields["limit"])
+        return model_options(runtime, fields, principal_resolver(request), cursor=cursor)
+
+    @transport
+    async def activity_read(request: Request, entity_id: str):
+        from .activity import timeline
+
+        workspace = uuid_adapter.validate_python(request.query_params.get("workspace_id"))
+        entity = uuid_adapter.validate_python(entity_id)
+        fields = {"item_id" if "/work-items/" in request.url.path else "agent_id": entity}
+        return timeline(
+            runtime,
+            workspace,
+            principal_resolver(request),
+            **fields,
+            cursor=request.query_params.get("cursor"),
+            limit=int(request.query_params.get("limit", 50)),
+            project_id=request.query_params.get("project_id"),
+            start=int(request.query_params["from"]) if "from" in request.query_params else None,
+            end=int(request.query_params["to"]) if "to" in request.query_params else None,
+        )
+
+    @transport
+    async def board_read(request: Request, state: str | None = None):
+        fields = dict(request.query_params)
+        token = fields.pop("cursor", None)
+        for field in ("limit", "priority"):
+            if field in fields:
+                fields[field] = int(fields[field])
+        if "states" in fields:
+            fields["states"] = fields["states"].split(",")
+        query = BoardQuery.model_validate(fields)
+        return JSONResponse(boards.page(query, principal_resolver(request), state=state, cursor=token))
 
     def add_route(path, handler, *, methods):
         if route_filter is None or route_filter(path, methods[0]):
@@ -295,11 +340,18 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
 
     @transport
     async def agents_list(request: Request):
-        return {
-            "items": runtime.agents.list(
-                uuid_adapter.validate_python(request.query_params.get("workspace_id")), principal_resolver(request)
-            )
-        }
+        fields = request.query_params
+        enabled = fields.get("enabled")
+        if enabled not in {None, "true", "false"}:
+            raise WorkbenchError("INVALID_PAGE", "Enabled filter must be true or false", 422)
+        return runtime.agents.list_page(
+            uuid_adapter.validate_python(fields.get("workspace_id")),
+            principal_resolver(request),
+            limit=int(fields.get("limit", 50)),
+            cursor=fields.get("cursor"),
+            query=fields.get("query", ""),
+            enabled=None if enabled is None else enabled == "true",
+        )
 
     @transport
     async def agent_configure(request: Request, entity_id: str | None = None):
@@ -308,6 +360,48 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
             principal_resolver(request),
             uuid_adapter.validate_python(entity_id) if entity_id else None,
         )
+
+    @transport
+    async def agent_read(request: Request, entity_id: str):
+        if entity_id == "configure":
+            raise WorkbenchError("NOT_FOUND", "Agent not found", 404)
+        return runtime.agents.profile(
+            uuid_adapter.validate_python(request.query_params.get("workspace_id")),
+            uuid_adapter.validate_python(entity_id),
+            principal_resolver(request),
+        )
+
+    @transport
+    async def metrics_read(request: Request, entity_id: str):
+        from .metrics import agent_metrics
+        from .schema import parse_timestamp
+
+        fields = request.query_params
+        return agent_metrics(
+            runtime,
+            uuid_adapter.validate_python(fields.get("workspace_id")),
+            uuid_adapter.validate_python(entity_id),
+            principal_resolver(request),
+            start=parse_timestamp(fields["from"]) if not fields["from"].isdigit() else int(fields["from"]),
+            end=parse_timestamp(fields["to"]) if not fields["to"].isdigit() else int(fields["to"]),
+            bucket=fields.get("bucket", "day"),
+            project_id=uuid_adapter.validate_python(fields["project_id"]) if fields.get("project_id") else None,
+            execution_kind=fields.get("execution_kind"),
+        )
+
+    @transport
+    async def agent_options(request: Request):
+        actor = principal_resolver(request)
+        authorize(actor, "local", "agent.admin", local_only=True)
+        return {
+            "tools": sorted(set(service.settings.tool_registry) | {"propose_file_changes"}),
+            "skills": [
+                {"id": skill["id"], "name": skill["name"]}
+                for skill in service.skills.list(limit=100)["items"]
+                if skill["enabled"] and skill["trusted"]
+            ],
+            "capabilities": ["code", "text", "structured_output", "tools", "vision", "embeddings"],
+        }
 
     @transport
     async def import_preview(request: Request):
@@ -340,6 +434,72 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
         )
 
     @transport
+    async def delivery_preview(request: Request):
+        return runtime.delivery.preview(await bounded_json(request), principal_resolver(request))
+
+    @transport
+    async def deliveries_read(request: Request):
+        fields = request.query_params
+        return runtime.delivery.list(
+            uuid_adapter.validate_python(fields.get("workspace_id")),
+            principal_resolver(request),
+            project_id=uuid_adapter.validate_python(fields["project_id"]) if fields.get("project_id") else None,
+            cursor=fields.get("cursor"),
+            limit=int(fields.get("limit", 50)),
+        )
+
+    @transport
+    async def delivery_confirm(request: Request):
+        return runtime.delivery.confirm(await bounded_json(request), principal_resolver(request))
+
+    @transport
+    async def delivery_read(request: Request, entity_id: str):
+        return runtime.delivery.get(
+            uuid_adapter.validate_python(request.query_params.get("workspace_id")),
+            uuid_adapter.validate_python(entity_id),
+            principal_resolver(request),
+            after=request.query_params.get("cursor", ""),
+            limit=int(request.query_params.get("limit", "50")),
+        )
+
+    @transport
+    async def delivery_command(request: Request, entity_id: str):
+        method = runtime.delivery.reapprove if request.url.path.endswith("/reapprove") else runtime.delivery.command
+        return method(
+            uuid_adapter.validate_python(request.query_params.get("workspace_id")),
+            uuid_adapter.validate_python(entity_id),
+            await bounded_json(request),
+            principal_resolver(request),
+        )
+
+    @transport
+    async def prd_imports(request: Request, entity_id: str):
+        workspace = uuid_adapter.validate_python(request.query_params.get("workspace_id"))
+        principal = principal_resolver(request)
+        authorize(principal, workspace, "workspace.read")
+        with service.store.router.lock:
+            service.store.get("prd", workspace, uuid_adapter.validate_python(entity_id))
+            rows = service.store.db.execute(
+                "SELECT id,project_id FROM wb_plan_imports WHERE workspace_id=? AND prd_id=? AND status='COMMITTED' ORDER BY created_at DESC,id DESC LIMIT 50",
+                (workspace, entity_id),
+            ).fetchall()
+            return {
+                "items": [
+                    {
+                        **dict(row),
+                        "item_ids": [
+                            item[0]
+                            for item in service.store.db.execute(
+                                "SELECT work_item_id FROM wb_plan_bindings WHERE import_id=? ORDER BY work_item_id LIMIT 1000",
+                                (row["id"],),
+                            )
+                        ],
+                    }
+                    for row in rows
+                ]
+            }
+
+    @transport
     async def planning_quote(request: Request):
         return runtime.planning.quote(await bounded_json(request), principal_resolver(request))
 
@@ -363,6 +523,17 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
             uuid_adapter.validate_python(request.query_params.get("workspace_id")),
             uuid_adapter.validate_python(entity_id),
             principal_resolver(request),
+        )
+
+    @transport
+    async def operations_read(request: Request):
+        fields = request.query_params
+        return runtime.planning.list(
+            uuid_adapter.validate_python(fields.get("workspace_id")),
+            principal_resolver(request),
+            project_id=uuid_adapter.validate_python(fields["project_id"]) if fields.get("project_id") else None,
+            limit=int(fields.get("limit", 50)),
+            cursor=fields.get("cursor"),
         )
 
     @transport
@@ -462,11 +633,15 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
                 if not 1 <= limit <= 200:
                     raise WorkbenchError("INVALID_PAGE", "Page size must be between 1 and 200", 422)
                 after = decode_cursor(request.query_params.get("cursor"), kind)
+                search = request.query_params.get("query", "")
+                if len(search) > 200:
+                    raise WorkbenchError("INVALID_SEARCH", "Search limited to 200 characters", 422)
+                literal = "%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
                 with service.store.router.lock:
                     if principal.local and "*" in principal.workspaces:
                         rows = service.store.db.execute(
-                            "SELECT id FROM wb_workspaces WHERE archived_at IS NULL AND id>? ORDER BY id LIMIT ?",
-                            (after or "", limit + 1),
+                            "SELECT id FROM wb_workspaces WHERE archived_at IS NULL AND id>? AND name LIKE ? ESCAPE '\\' ORDER BY id LIMIT ?",
+                            (after or "", literal, limit + 1),
                         ).fetchall()
                     else:
                         rows = [(wid,) for wid in sorted(principal.workspaces) if wid > (after or "")][: limit + 1]
@@ -708,6 +883,10 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
         )
 
     for prefix in prefixes:
+        add_route(prefix + "/work-items/{entity_id}/activity", activity_read, methods=["GET"])
+        add_route(prefix + "/agents/{entity_id}/activity", activity_read, methods=["GET"])
+        add_route(prefix + "/board", board_read, methods=["GET"])
+        add_route(prefix + "/board/columns/{state}", board_read, methods=["GET"])
         add_route(prefix + "/retention/preview", retention_preview, methods=["GET"])
         add_route(prefix + "/retention/apply", retention_apply, methods=["POST"])
         add_route(prefix + "/lan/setup", lan_setup, methods=["GET"])
@@ -729,12 +908,24 @@ def install(app, runtime, *, prefixes=PREFIXES, principal_resolver=local_princip
         add_route(prefix + "/work-items/{entity_id}/assignment-preview", assignment_preview, methods=["POST"])
         add_route(prefix + "/work-items/{entity_id}/assign", assignment_commit, methods=["POST"])
         add_route(prefix + "/agents", agents_list, methods=["GET"])
+        add_route(prefix + "/operations", operations_read, methods=["GET"])
+        add_route(prefix + "/agents/{entity_id}", agent_read, methods=["GET"])
+        add_route(prefix + "/agents/{entity_id}/metrics", metrics_read, methods=["GET"])
+        add_route(prefix + "/agent-options", agent_options, methods=["GET"])
+        add_route(prefix + "/model-options", models_read, methods=["GET"])
         add_route(prefix + "/agents", agent_configure, methods=["POST"])
         add_route(prefix + "/agents/{entity_id}", agent_configure, methods=["PATCH"])
         add_route(prefix + "/plan-imports", import_preview, methods=["POST"])
         add_route(prefix + "/plan-imports/{entity_id}", import_read, methods=["GET"])
         add_route(prefix + "/plan-imports/{entity_id}/commit", import_commit, methods=["POST"])
         add_route(prefix + "/plan-imports/{entity_id}/reconcile-commit", import_commit, methods=["POST"])
+        add_route(prefix + "/delivery-batches/preview", delivery_preview, methods=["POST"])
+        add_route(prefix + "/delivery-batches", delivery_confirm, methods=["POST"])
+        add_route(prefix + "/delivery-batches", deliveries_read, methods=["GET"])
+        add_route(prefix + "/delivery-batches/{entity_id}", delivery_read, methods=["GET"])
+        add_route(prefix + "/delivery-batches/{entity_id}/commands", delivery_command, methods=["POST"])
+        add_route(prefix + "/delivery-batches/{entity_id}/reapprove", delivery_command, methods=["POST"])
+        add_route(prefix + "/prds/{entity_id}/imports", prd_imports, methods=["GET"])
         add_route(prefix + "/prds/{entity_id}/reconcile", reconcile_preview, methods=["POST"])
         add_route(prefix + "/planning/quote", planning_quote, methods=["POST"])
         add_route(prefix + "/prds/generate", planning_generate, methods=["POST"])

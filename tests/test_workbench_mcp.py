@@ -98,3 +98,31 @@ async def test_machine_cannot_claim_human_approval(engine):
                 "fields": {"title": "Injected", "execution_kind": "MANUAL", "actor_type": "HUMAN", "status": "DONE"},
             },
         )
+
+
+async def test_new_read_models_match_shared_and_forwarded_daemon(engine, monkeypatch):
+    from test_workbench_agents import HUMAN, definition
+
+    import local_ai_router.workbench.metrics as metrics
+
+    monkeypatch.setattr(metrics, "now", lambda: 123456789)
+
+    app = create_app(engine.settings, engine)
+    transport = httpx.ASGITransport(app=app)
+    monkeypatch.setattr(wb_mcp, "WorkbenchClient", lambda settings: WorkbenchClient(settings, transport=transport))
+    runtime = app.state.workbench
+    ws = runtime.service.seed_defaults()
+    agent = runtime.agents.configure(definition(ws), HUMAN).body
+    shared, stdio = create_mcp(engine.settings, engine), create_mcp(engine.settings)
+    for name, fields in (
+        ("get_agent_profile", {"workspace_id": ws.id, "agent_id": agent["id"]}),
+        ("get_workbench_board", {"workspace_id": ws.id}),
+        ("get_workbench_timeline", {"workspace_id": ws.id, "entity_id": agent["id"], "entity_type": "agent"}),
+        ("get_agent_metrics", {"workspace_id": ws.id, "agent_id": agent["id"], "start": 1, "end": 86400000}),
+        ("get_workbench_model_options", {"input": {"workspace_id": ws.id, "purpose": "executor"}}),
+    ):
+        left, right = decode(await shared.call_tool(name, fields)), decode(await stdio.call_tool(name, fields))
+        assert left == right, name
+    names = {tool.name for tool in await shared.list_tools()}
+    assert "confirm_feature_delivery" not in names and "approve_feature_delivery" not in names
+    assert engine.store.costs()["calls"] == 0

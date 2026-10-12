@@ -1,6 +1,7 @@
 """Operator definitions and real daemon-owned built-in Engine instances."""
 
 import asyncio
+import hashlib
 import json
 import os
 
@@ -50,6 +51,9 @@ class Agents:
                 raise WorkbenchError("SKILL_UNTRUSTED", "Agent skill is unknown", 422) from exc
             if skill is None or not skill.enabled or not skill.trusted:
                 raise WorkbenchError("SKILL_UNTRUSTED", "Agent skill must be enabled and trusted", 422)
+        from .model_options import validate_bindings
+
+        validate_bindings(self.runtime, body, principal)
 
         def apply():
             old = self.definition(agent_id) if agent_id else None
@@ -71,6 +75,7 @@ class Agents:
                 updated_by=principal.id,
             )
             data = definition.model_dump()
+            data["model_bindings_json"] = json.dumps(data.pop("model_bindings"))
             for key in (
                 "capabilities",
                 "tools",
@@ -85,6 +90,11 @@ class Agents:
                 f"INSERT INTO wb_agent_definitions({','.join(data)}) VALUES({','.join('?' for _ in data)}) ON CONFLICT(id) DO UPDATE SET "
                 + ",".join(k + "=excluded." + k for k in data),
                 tuple(data.values()),
+            )
+            self.store.db.execute("DELETE FROM wb_agent_workspaces WHERE agent_id=?", (definition.id,))
+            self.store.db.executemany(
+                "INSERT INTO wb_agent_workspaces VALUES(?,?)",
+                [(definition.id, ws) for ws in set(definition.allowed_workspaces)],
             )
             for workspace_id in sorted(set(definition.allowed_workspaces) | set(old.allowed_workspaces if old else [])):
                 projection = AgentProjection(**definition.model_dump(), workspace_id=workspace_id)
@@ -171,10 +181,44 @@ class Agents:
         self.instances.clear()
 
     def list(self, workspace_id, principal):
+        return self.list_page(workspace_id, principal, limit=200)["items"]
+
+    def list_page(self, workspace_id, principal, *, limit=50, cursor=None, query="", enabled=None):
         authorize(principal, workspace_id, "workspace.read")
+        if type(limit) is not int or not 1 <= limit <= 200 or not isinstance(query, str) or len(query) > 200:
+            raise WorkbenchError("INVALID_PAGE", "Invalid agent page", 422)
+        if enabled is not None and type(enabled) is not bool:
+            raise WorkbenchError("INVALID_PAGE", "Invalid agent enabled filter", 422)
+        scope = {
+            "kind": "agents",
+            "version": 1,
+            "workspace": workspace_id,
+            "principal": principal.id,
+            "query": query,
+            "enabled": enabled,
+        }
+        after = ""
+        if cursor:
+            position = self.runtime.journal.decode(cursor)
+            if (
+                not isinstance(position, dict)
+                or any(position.get(k) != v for k, v in scope.items())
+                or not isinstance(position.get("after"), str)
+                or type(position.get("expires")) is not int
+                or position["expires"] < now()
+            ):
+                raise WorkbenchError("CURSOR_QUERY_MISMATCH", "Agent scope changed", 422)
+            after = position["after"]
         result = []
         with self.store.router.lock:
-            for row in self.store.db.execute("SELECT id FROM wb_agent_definitions ORDER BY id LIMIT 200").fetchall():
+            escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            rows = self.store.db.execute(
+                "SELECT a.id FROM wb_agent_workspaces w JOIN wb_agent_definitions a ON a.id=w.agent_id WHERE w.workspace_id=? AND a.id>? AND a.name LIKE ? ESCAPE '\\'"
+                + (" AND a.enabled=?" if enabled is not None else "")
+                + " ORDER BY a.id LIMIT ?",
+                [workspace_id, after, "%" + escaped + "%", *([int(enabled)] if enabled is not None else []), limit + 1],
+            ).fetchall()
+            for row in rows[:limit]:
                 definition = self.definition(row[0])
                 if workspace_id not in definition.allowed_workspaces:
                     continue
@@ -200,12 +244,27 @@ class Agents:
                         "provider_eligibility": "checked per work item",
                     }
                 )
-        return result
+        more = len(rows) > limit
+        return {
+            "items": result,
+            "has_more": more,
+            "next_cursor": self.runtime.journal.token({**scope, "after": result[-1]["id"], "expires": now() + 900_000})
+            if more
+            else None,
+        }
 
     def policy_hash(self, item):
         policy = self.service.item_policy(item)
         workspace = self.store.get("workspace", item.workspace_id, item.workspace_id)
         project = self.store.get("project", item.workspace_id, item.project_id)
+        from .model_options import inventory_hash
+
+        agent_versions = hashlib.sha256()
+        for row in self.store.db.execute(
+            "SELECT a.id,a.revision FROM wb_agent_workspaces w JOIN wb_agent_definitions a ON a.id=w.agent_id WHERE w.workspace_id=? ORDER BY a.id",
+            (item.workspace_id,),
+        ):
+            agent_versions.update(json.dumps(tuple(row)).encode())
         return payload_hash(
             {
                 "item_contract_revision": item.contract_revision,
@@ -222,11 +281,40 @@ class Agents:
                 "quality": policy.quality,
                 "review": policy.review,
                 "budget": policy.budget_microusd,
+                "agent_versions": agent_versions.hexdigest(),
+                "model_policy": inventory_hash(self.runtime.engine.settings),
             }
         )
 
+    def profile(self, workspace_id, agent_id, principal):
+        authorize(principal, workspace_id, "workspace.read")
+        with self.store.router.lock:
+            if not self.store.db.execute(
+                "SELECT 1 FROM wb_agent_workspaces WHERE workspace_id=? AND agent_id=?", (workspace_id, agent_id)
+            ).fetchone():
+                raise WorkbenchError("NOT_FOUND", "Agent not found", 404)
+            definition = self.definition(agent_id)
+            current = [
+                dict(row)
+                for row in self.store.db.execute(
+                    "SELECT a.id AS assignment_id,a.item_id,i.display_key,i.title,a.status,t.id AS attempt_id,t.state,t.started_at FROM wb_assignments a JOIN wb_work_items i ON i.id=a.item_id LEFT JOIN wb_attempts t ON t.id=i.active_attempt_id WHERE a.workspace_id=? AND a.agent_definition_id=? AND a.status IN ('RESERVED','ACTIVE') ORDER BY a.created_at DESC LIMIT 50",
+                    (workspace_id, agent_id),
+                )
+            ]
+            from .connectors import connector_profiles
+
+            return {
+                "definition": definition.model_dump(mode="json"),
+                "current_work": current,
+                "load": len(current),
+                "capacity": definition.concurrency_limit,
+                "model_eligibility": "checked per item",
+                "can_configure": principal.local and "agent.admin" in principal.capabilities,
+                "connectors": connector_profiles(self.runtime, definition),
+            }
+
     def preview(self, workspace_id, item_id, principal):
-        from ..contracts import contract_scope
+        from ..contracts import contract_scope, model_selection_scope
         from ..routing import deterministic
         from .policy import remaining_budget
 
@@ -284,8 +372,11 @@ class Agents:
                 if not reasons:
                     from ..contracts import strictest
 
-                    with contract_scope(
-                        mode=strictest(policy.privacy, definition.privacy_policy), quality=policy.quality
+                    with (
+                        contract_scope(
+                            mode=strictest(policy.privacy, definition.privacy_policy), quality=policy.quality
+                        ),
+                        model_selection_scope(definition.model_bindings.model_dump(mode="json")),
                     ):
                         models, model_decision = self.runtime.engine.router.roles.select(
                             deterministic(item.spec.objective),
@@ -295,10 +386,24 @@ class Agents:
                             inputs=len(item.model_dump_json().encode()) + 2000,
                             budget=budget["remaining_microusd"] / 1_000_000,
                         )
+                        model_decision["roles"] = {}
+                        for required_role in sorted(roles):
+                            chosen, report = self.runtime.engine.router.roles.select(
+                                deterministic(item.spec.objective),
+                                required_role,
+                                item.spec.required_capabilities or ["code"],
+                                allow_cloud=policy.privacy != "LOCAL_ONLY",
+                                budget=budget["remaining_microusd"] / 1_000_000,
+                            )
+                            model_decision["roles"][required_role] = report
+                            if not chosen:
+                                reasons.append("NO_ELIGIBLE_" + required_role.upper())
                     if not models:
                         reasons.append("NO_ELIGIBLE_MODEL")
                 candidate = {
                     "agent_id": definition.id,
+                    "agent_revision": definition.revision,
+                    "model_bindings": definition.model_bindings.model_dump(mode="json"),
                     "instance_id": instance["id"] if instance else None,
                     "candidate_model_id": next(
                         (m.id for m in models if m.id == item.preferred_model_id), models[0].id if models else None
@@ -324,7 +429,7 @@ class Agents:
                 "inference": False,
             }
 
-    def assign(self, workspace_id, item_id, request, principal):
+    def assign(self, workspace_id, item_id, request, principal, *, _delivery_batch=None):
         from .schema import AssignmentCommand
 
         body = AssignmentCommand.model_validate(request)
@@ -362,6 +467,13 @@ class Agents:
                 200, {"assignment_id": assignment_id, "item": changed.model_dump(mode="json"), "decision": decision}
             )
 
+        if _delivery_batch is not None:
+            if not self.store.db.in_transaction or principal.actor_type != "SYSTEM":
+                raise WorkbenchError("INVALID_GRANT", "Delivery assignment requires coordinator transaction", 403)
+            _, _, _, agents = self.runtime.delivery.authorization(_delivery_batch, item_id)
+            if agents.get(body.agent_id) != self.definition(body.agent_id).revision:
+                raise WorkbenchError("AGENT_INELIGIBLE", "Delivery agent revision changed", 422)
+            return apply()
         return self.service.command(
             principal,
             workspace_id,
@@ -387,6 +499,7 @@ class Agents:
             "spec": item.spec.model_dump(mode="json"),
             "assignment_id": assignment["id"],
             "agent_definition_revision": definition.revision,
+            "model_bindings": definition.model_bindings.model_dump(mode="json"),
             "policy_revision_hash": self.policy_hash(item),
         }
         return {

@@ -1,0 +1,20 @@
+{
+  "command_id": "a20b7d2f-b4de-4b35-ae22-05dc21060541",
+  "name": "Greeting worker",
+  "allowed_workspaces": [
+    "a20b7d2f-b4de-4b35-ae22-05dc21060542"
+  ],
+  "model_bindings": {
+    "executor": {
+      "mode": "pinned",
+      "primary_model_id": "configured-local-model",
+      "fallback_model_ids": []
+    },
+    "repairer": {
+      "mode": "auto"
+    },
+    "reviewer": {
+      "mode": "auto"
+    }
+  }
+}

@@ -211,6 +211,8 @@ class Engine:
         )
         c = await self.router.classify(request.task, rid, graph)
         skill_contract = self.skills.resolve(request, c.task_family)
+        from .contracts import model_order
+
         key = cache_key(
             "plan-v3",
             request.model_dump(mode="json"),
@@ -219,6 +221,7 @@ class Engine:
             self.prompt_version(),
             budget,
             skill_contract.model_dump(),
+            model_order("planner"),
         )
         cached = self.store.get(key)
         if cached:
@@ -236,7 +239,9 @@ class Engine:
                 if candidates
                 else None
             )
-            if arbiter and arbiter.model_id:
+            from .contracts import model_order
+
+            if arbiter and arbiter.model_id and model_order("planner") is None:
                 candidates.sort(key=lambda m: m.id != arbiter.model_id)
             # Trivial explicitly named file changes can skip model planning.
             mentioned = re_files(request.task, graph.files)
@@ -283,7 +288,7 @@ class Engine:
                 candidates = self.router.candidates(
                     c, "planner", ["code"], repo.cloud_allowed, inputs=token_upper_bound(messages), budget=budget
                 )
-                if arbiter and arbiter.model_id:
+                if arbiter and arbiter.model_id and model_order("planner") is None:
                     candidates.sort(key=lambda m: m.id != arbiter.model_id)
                 plan = None
                 for model in candidates[: self.settings.routing.max_attempts]:
@@ -688,6 +693,10 @@ class Engine:
             )
             if isinstance(exc, asyncio.CancelledError):
                 raise
+            from .workbench.connectors import ConnectorUncertain
+
+            if isinstance(exc, ConnectorUncertain):
+                raise
             raise RuntimeError(
                 f"Run {rid} failed ({type(exc).__name__}: {redact(str(exc))}). Error ID: {error_id}. Router edits rolled back; conflicts: {conflicts_left}"
             ) from None
@@ -733,23 +742,29 @@ class Engine:
         prior_error = ""
         task_key = plan.request_id + "-" + task.id
         model_index, escalations, spent = 0, 0, self.store.task_cost(task_key)
+        failed_models = set()
         for attempt in range(min(task.max_attempts, self.settings.routing.max_attempts)):
             from .contracts import execution_signal
 
             execution_signal("worker_start", task_id=task.id)
             model = candidates[model_index]
             if attempt:
+                from .contracts import model_order
+
                 repair_candidates = self.router.candidates(
                     c,
                     "repair",
                     task.minimum_capabilities,
                     repo.cloud_allowed,
+                    excluded=failed_models if model_order("repairer") is not None else None,
                     budget=min(task.max_cost - spent, plan.allowed_budget),
                 )
                 if not repair_candidates:
                     raise ProviderError("No eligible repairer under current role, privacy and budget policy")
                 policy = self.settings.roles.get("repairer")
-                if not policy or policy.strategy == "auto":
+                from .contracts import model_order
+
+                if model_order("repairer") is None and (not policy or policy.strategy == "auto"):
                     repair_candidates.sort(key=lambda candidate: candidate.id != model.id)
                 model = repair_candidates[0]
             capsule, savings = graph.capsule(
@@ -811,7 +826,14 @@ class Engine:
             self.store.trace(plan.request_id, "context", task=task.id, **savings)
             start = time.monotonic()
             try:
-                with contract_scope(files=[f["path"] for f in capsule["files"]]):
+                from .contracts import proposal_scope
+
+                proposal = None
+                if self.settings.providers[model.provider].kind == "connector":
+                    from .workbench.connectors import build_request
+
+                    proposal = build_request(self.store, model, task, capsule, plan, task.max_cost - spent)
+                with contract_scope(files=[f["path"] for f in capsule["files"]]), proposal_scope(proposal):
                     result = await self.providers.generate(
                         model,
                         messages,
@@ -886,6 +908,7 @@ class Engine:
                     "remaining_risks": worker.remaining_risks,
                 }
             except (ProviderError, ValueError) as exc:
+                failed_models.add(model.id)
                 spent = self.store.task_cost(task_key)
                 prior_error = str(redact(str(exc)))[:6000]
                 self.store.success(model.id, c.task_family, False, time.monotonic() - start)
@@ -976,6 +999,9 @@ class Engine:
         review = Review.model_validate(parse_json(result.text))
         self.store.trace(plan.request_id, "review", task=task.id, model=candidates[0].id, accepted=review.accepted)
         if not review.accepted:
+            from .contracts import execution_signal
+
+            execution_signal("review_end", task_id=task.id, model_id=candidates[0].id, status="rejected")
             raise ValueError("Reviewer: " + "; ".join(review.findings))
         from .contracts import execution_signal
 
