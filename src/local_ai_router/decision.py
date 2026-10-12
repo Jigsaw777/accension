@@ -14,7 +14,9 @@ class LocalDecisionEngine:
         critical = bool(
             re.search(r"security|credential|authenticat|migration|concurren|race condition|deadlock|encrypt", text)
         )
-        architecture = bool(re.search(r"architect|multi.module|across|redesign|api.*database", text))
+        architecture = bool(re.search(r"architect|multi.module|across|redesign", text)) or any(
+            "database" in line.partition("api")[2] for line in text.split("\n")
+        )
         feature = bool(re.search(r"\bfeature\b|\bimplement\b", text))
         simple = bool(re.search(r"typo|rename|format|documentation|explain|unit test", text))
         family = (
