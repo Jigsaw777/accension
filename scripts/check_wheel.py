@@ -1,5 +1,6 @@
 """Build the wheel and run CLI smoke checks in a fresh environment outside source."""
 
+import ast
 import json
 import os
 import subprocess
@@ -7,8 +8,6 @@ import sys
 import tempfile
 import venv
 from pathlib import Path
-
-from local_ai_router import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,6 +20,13 @@ def run(argv, cwd, env=None):
 
 
 def main():
+    metadata = ast.parse((ROOT / "src/local_ai_router/__init__.py").read_text(encoding="utf-8"))
+    expected_version = next(
+        ast.literal_eval(node.value)
+        for node in metadata.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets)
+    )
     run([sys.executable, "-m", "build", "--wheel"], ROOT)
     wheels = sorted((ROOT / "dist").glob("accension-*.whl"), key=lambda p: p.stat().st_mtime)
     if not wheels:
@@ -35,7 +41,7 @@ def main():
         run([str(python), "-m", "pip", "install", str(wheels[-1])], base, env)
         run([str(cli), "--help"], base, env)
         version = json.loads(run([str(cli), "version", "--json"], base, env))
-        if version["version"] != __version__:
+        if version["version"] != expected_version:
             raise RuntimeError("Wheel reports an unexpected public version")
         doctor = json.loads(run([str(cli), "doctor", "--mock", "--json"], base, env))
         if doctor["database"] != "ok" or not doctor["logging"]["writable"]:
