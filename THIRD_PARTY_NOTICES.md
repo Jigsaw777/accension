@@ -15,4 +15,6 @@ Direct runtime dependencies:
 
 Optional Azure authentication uses `azure-identity` from https://github.com/Azure/azure-sdk-for-python. Tests use pytest and pytest-asyncio. Installed packages include their own license metadata and notices; consult those for the exact versions used. `requirements-lock.txt` records one Windows development environment and includes transitive dependencies; `pyproject.toml` declares supported dependency ranges.
 
+Windows desktop installers bundle CPython under the Python Software Foundation license, plus runtime packages and optional Azure, AWS, Google and LAN dependencies under their respective licenses. The installed `python/LICENSE.txt`, package `dist-info` license files and `runtime-manifest.json` identify the bundled components. Inno Setup builds the installer; its license is at https://github.com/jrsoftware/issrc/blob/main/license.txt. Generated installer binaries are release artifacts, not committed source.
+
 RTK, Graphify, Laya, Codex, Claude, local model runtimes and provider APIs are optional integrations, not bundled components. Users install and license them separately. Mentioning an integration does not imply endorsement or affiliation.

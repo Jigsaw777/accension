@@ -19,6 +19,8 @@ Keep local and cloud models in one place. Choose privacy and spending limits. Le
 
 ## Install and start in the terminal
 
+Windows desktop users can run the offline installer in `dist/windows/Accension-1.0.0-windows-x64.exe` after building this checkout, then open **Accension** from the Start menu. Python is bundled. See [Windows installer](installer/windows/README.md) for build, upgrade and uninstall instructions.
+
 Requires Python 3.11+. From a downloaded source checkout on Windows, Linux or macOS, choose one:
 
 ```sh
@@ -50,6 +52,8 @@ accs run "Add a greeting feature with tests" --repo . --budget 0.25 --max-cloud-
 ## Use the local app
 
 `accs ui` opens the local app at **http://127.0.0.1:8765/ui**. No Accension account is needed. Browser sessions and API clients have separate local security checks. The service only listens on this computer. See [Security](SECURITY.md) for details.
+
+Routing and provider management live at `/ui`; projects and work items live at `/ui/workbench`. They are linked pages in one application, with one Engine, configuration and database. The desktop shortcut opens Workbench; **Accension settings** opens model routing, and **Open Workbench** returns to the board.
 
 ```sh
 accs start --background
