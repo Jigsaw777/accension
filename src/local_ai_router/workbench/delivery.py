@@ -508,6 +508,11 @@ class Delivery:
         )
 
     def tick(self):
+        # Serialize reads as well as writes on the shared SQLite connection.
+        with self.store.router.lock:
+            self._tick()
+
+    def _tick(self):
         if not self.runtime.scheduler.leader():
             return
         from .scheduler import SYSTEM

@@ -182,10 +182,17 @@ async def test_preview_tampering_and_expiry_are_rejected(delivery):
         runtime.delivery.confirm({**command, "preview": runtime.journal.token(signed)}, HUMAN)
 
 
-async def test_tick_queues_once_under_human_grant_and_waits_dependency(delivery):
+async def test_tick_queues_once_under_human_grant_and_waits_dependency(delivery, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
 
     runtime, ws, body = delivery
+    leader = runtime.scheduler.leader
+
+    def locked_leader():
+        assert runtime.engine.store.lock._is_owned()
+        return leader()
+
+    monkeypatch.setattr(runtime.scheduler, "leader", locked_leader)
     batch = approve_delivery(runtime, ws, body)
     await runtime.start()
     assert runtime.scheduler.acquire()
