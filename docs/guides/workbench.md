@@ -4,7 +4,9 @@ Workbench organizes projects, requirements and dependent work items. Model routi
 
 ![Current Workbench board with synthetic project and reviewed Engine tasks](screenshots/feature-board-dark-desktop.png)
 
-Follow the [five-stage README walkthrough](../../README.md#workbench) and [feature delivery guide](feature-delivery.md) for PRD generation, model choices, execution approval, metrics and completion review. See the [current screenshots](screenshots/feature-showcase.md) for capture details.
+For new users who have installed Accension. Manual planning needs no model; execution needs a registered repository, installed project dependencies, trusted checks and eligible models. [Documentation index](../README.md) · [Feature delivery](feature-delivery.md).
+
+Use **Greeting demo**, prefix **DEMO**, throughout this walkthrough. The pictured **Greeting feature (demo)** is an isolated fixture of the same workflow. Its mock inference ran real local tests; metrics are demonstration data. See [capture details](screenshots/feature-showcase.md).
 
 ## Open the application
 
@@ -12,8 +14,8 @@ Use the Windows **Accension** shortcut, or run `accs ui` in a source installatio
 
 ## Create your first project
 
-1. Select the **Personal** workspace, open **Projects**, and enter a project name such as *Website maintenance*.
-2. Set a short ticket prefix such as *WEB*, save the project, and select it in the Project filter.
+1. Select the **Personal** workspace, open **Projects**, and enter *Greeting demo*.
+2. Set ticket prefix *DEMO*, save, and select it in the Project filter. The saved project remains after refresh.
 3. Open **Board → Create work item**. Enter the title, objective, acceptance criteria and definition of done, then save.
 4. Open the ticket to fill its remaining contract: allowed paths, expected artifacts, registered validation, dependencies, capabilities, budget, privacy and review requirements.
 5. Mark the item ready only when its contract and prerequisites are complete. Use the returned validation/reason codes to resolve missing fields.
@@ -22,17 +24,57 @@ Ticket keys and column states come from stored items. Search matches titles; eac
 
 ## Plan from a PRD
 
-Open **PRDs**, create a document from the bundled template, and fill its requirements. Submit it for review and approve its current revision. Generate/decompose work only after reviewing its quote and privacy/budget constraints. Preview imported proposals before explicitly choosing create/update/keep/archive/successor actions. A generated plan is advice; it does not edit a repository or approve execution. Each execution plan remains bounded by the existing AXIR limit of 64 nodes.
+### Write a PRD manually
+
+1. Open **PRDs → Create PRD**. Set title *Greeting function, tests and documentation*.
+2. Describe the problem: “Greeting behavior needs a reusable implementation.” Set objective *Greeting verified* and scope *Greeting, tests, usage*.
+3. Add requirement **R1**: “Implement greet and its documentation/tests.” Add criterion **A1**: “Named and blank input verified.” Include out-of-scope work and risks where useful. Save the draft.
+4. Inspect the saved revision. Choose **submit review** and then **approve** only after reviewing the current requirements. The PRD becomes **APPROVED**; no execution has started.
+
+![Greeting demo PRD editor showing structured requirements and acceptance criteria](screenshots/feature-prd-light-desktop.png)
+
+*Synthetic draft requirements; PRD approval concerns requirements, not execution.*
+
+### Generate a draft with a model
+
+Open **Generate PRD**, enter requirement text, optionally set a title, and choose **Planner model**. Select **Quote inference**. Inspect eligible planners, privacy and quoted cost before **Save** starts generation. This can call a paid provider when cloud inference is permitted. The resulting document is a draft, not automatically approved.
+
+Reopen a running operation rather than submitting duplicate inference. Missing capabilities, prices or budget can prevent a quote. Review generated scope/criteria using the same manual approval steps. Planning costs remain separate from execution.
+
+### Decompose and import
+
+1. On the approved PRD choose **Decompose approved PRD**. Enter allowed paths such as `greeting.py`, `test_greeting.py` and `USAGE.md`, one per line.
+2. Choose a planner and **Quote inference**. Review cost/privacy; **Save** starts decomposition and can spend provider resources.
+3. Inspect the import preview: requirement coverage, contracts and dependencies. Implementation precedes tests, which precede usage documentation in this example.
+4. Choose **Import selected tasks** after reviewing proposals. Tasks appear in **BACKLOG**. Import edits Workbench records, not repository files, and grants no execution authority.
+
+Advanced imports support explicit create/update/keep/archive/successor decisions. AXIR plans have a 64-node limit. Changed requirements/proposals invalidate stale decisions. [Planning contracts](../WORKBENCH_CONTRACTS.md).
 
 ## Execute and review
 
 1. In **Accension settings**, register the repository and trusted test/build commands. Connect models, establish their price/capability evidence, and choose the privacy/routing policy.
 2. In Workbench **Agents**, configure the built-in Engine worker, inspect its capabilities and eligibility, and assign the ready item. Missing eligibility is displayed rather than bypassed.
-3. Inspect the displayed execution contract, approve the current contract when required, then request execution. Resume dispatch or enable it explicitly when you want queued work to start.
+3. For one item inspect **Review execution contract**, choose **Approve execution**, review again and **Run approved item**. For imported features use **Review imported feature**, choose tasks/agents, set **Feature maximum USD**, and **Preview feature execution**. Review scope before **Start approved feature**. Execution can change allowed files, run trusted checks and consume provider resources.
 4. Inspect the actual attempt, receipt, checks and artifacts under **Runs** or the item detail. A model response or screenshot alone cannot mark automated work done.
 5. Approve the exact completion evidence when human review is required, or reject it with a reason. Changed/stale evidence needs a fresh review.
 
 Manual work records human attestation separately from automated receipts. Repository manual work still needs expected artifacts and registered checks. Automatic verification needs successful independent checks; AI review needs an independent eligible reviewer. If required review is unavailable, work waits for a human.
+
+### Dependencies and models
+
+Upstream tasks must reach **DONE** before dependents proceed; **REVIEW** is not enough. Assignment chooses a worker. Its role bindings and current routing rules select eligible models. Primary/fallback choices cannot bypass privacy, capability, quality, price or budget requirements. [Models versus agents](models-and-routing.md).
+
+### Inspect runs, review and performance
+
+Open a ticket or **Runs** to read its attempt, registered checks and artifact hashes. If a check failed, inspect output, correct the cause and review the current contract before a permitted retry. A model's success message is not proof of completion.
+
+![Greeting completion evidence showing actual checks and required human review](screenshots/feature-review-light-desktop.png)
+
+*Real fixture tests passed; this item still awaits human completion review. Model output is mocked.*
+
+Inspect **Evidence for completion approval**, supply a **Command reason**, then **approve_completion** or **reject_completion**. Review binds to the exact contract/evidence; conflicts require refresh and inspection. Accepted completion advances dependent tasks. Feature delivery completes only when required members are done.
+
+In **Agents**, open the worker and choose **Performance**. Compare attempt success with approved delivery; inspect sample counts, duration units and cost provenance. Unknown usage is not zero, estimates are not invoices, and screenshots are not benchmarks. **Activity** provides paged recorded changes, not another execution authority.
 
 | State | Meaning |
 |---|---|
@@ -52,6 +94,8 @@ Device Only blocks remote browsing and uses local inference. Private LAN permits
 
 ## Recovery and troubleshooting
 
+Run `accs doctor` first. For **BLOCKED**, read the reason: finish upstream work, fill the contract or fix eligibility. For **FAILED**, inspect the attempt before retrying. For **REVIEW**, inspect evidence; for stale approval or **NEEDS_REVIEW**, make a fresh preview. Interrupted/uncertain workers reconcile before held allowance can be reused. [Delivery recovery](feature-delivery.md#troubleshooting) · [Troubleshooting](../../TROUBLESHOOTING.md).
+
 Offline clients keep their displayed view in memory and disable writes. Refresh after reconnect or a retired cursor. A revision conflict requires refreshing current data before retrying; do not reuse an idempotency command ID for changed input. Revoked devices must pair again with host approval.
 
 Cancellation is complete only after worker cleanup and verified rollback. RECONCILING means the known attempt/owner needs inspection, not that a worker stopped. Resume rejects changed files/policy; rollback preserves conflicting human edits. Do not force a second writer after CLEANUP_TIMEOUT. Inspect local service logs and resolve process ownership before restarting.
@@ -64,28 +108,20 @@ Cancellation is complete only after worker cleanup and verified rollback. RECONC
 | Remote certificate/session denied | Correct exact certificate trust/origin or inspect host grants/revocation |
 | Hub cannot start | Run `accs doctor`; inspect `.router/service.log` in the active profile |
 
-See [Windows operations](windows.md), [architecture](architecture.md), [security](../../SECURITY.md) and [CLI command help](../../README.md#cli-commands-and-help). Workbench execution does not automatically commit, push or merge Git changes.
+See [Windows operations](windows.md), [architecture](architecture.md), [security](../../SECURITY.md) and [CLI command help](../CLI.md). Workbench execution does not automatically commit, push or merge Git changes.
 
 ## From idea to approved feature
 
-1. Select the workspace and project, open **PRDs → Generate PRD**, enter a rough idea and constraints, choose an eligible registered planner, and quote the planning budget. **Save** authorizes that quoted inference request. A generated document remains a draft. Reloading lets you reopen the existing operation without submitting another request.
-2. Review the draft's labeled problem, objectives, scope, requirement IDs and acceptance entries. Save edits, submit review, then approve the current revision. Choose **Decompose approved PRD** with explicit allowed paths and a new planning quote. This produces a task proposal.
-3. Review requirement coverage, artifacts, registered checks and dependencies. **Import selected tasks** creates BACKLOG items. Review each task's agent, model/fallback policy, paths and individual allowance before previewing feature execution. **Start approved feature** is a separate human approval over the exact displayed contracts and batch cap.
-4. Open the feature delivery entry under PRDs to inspect counts, held allowance, settled ledger debit and uncertain reservations. Pause stops new dispatch; running work can finish. Cancel requests cleanup. Changed contracts, policy, models, grants or expiry require fresh review. A dependent task waits for the required upstream DONE evidence.
-5. Review each ticket's host checks and artifact evidence before approving completion. An Engine or connector success is not DONE. Only after required member completion does the delivery become COMPLETED. Reopen feature progress after reload from the same PRD page.
+For the full feature-batch flow, continue with [feature delivery](feature-delivery.md). It covers exact approval scope, budgets, pause/cancel, changed contracts and interrupted workers without duplicating the walkthrough above.
 
-**Agents** separates configured definitions, live host instances and attempt history. Create or edit an agent locally, grant registered repositories/tools/skills, and choose automatic routing or a pinned primary plus numbered fallbacks for each role. Eligibility reasons come from current policy; heartbeat capacity does not prove that a remote worker is reachable. Connector observations show the last exchange and time, with unknown before the first observation.
-
-**Performance** uses frozen attempt identity and reported-call provenance. Success shows its denominator; duration shows sample count and nearest-rank p50/p95. Human-reviewed delivery, review acceptance, reported tokens, usage estimates, budget estimates and connector-reported costs have distinct meanings. Missing usage/prices remain unknown. Graphs have labeled units and a UTC data table. Planning calls remain separate from execution-agent measures.
-
-Board filters preserve workspace/project/search, agent/type/priority and mobile state during refresh. Cards contain metadata, with bounded column pages. Activity and attempts load bounded pages; use older/more controls rather than loading entire history. CLI and MCP offer the same scoped reads; machine clients cannot approve feature execution or completion. Paired LAN browsers use explicit capability grants and CSRF-protected human decisions. Provider, connector and agent administration remain local.
+CLI and MCP expose scoped reads and commands. Ordinary machine calls cannot approve execution/completion. An authenticated human-operated local CLI has explicit item/PRD approval commands; feature-batch approval uses the browser. Paired browsers need live capability grants. Administration stays local. [CLI reference](../CLI.md#workbench-commands).
 
 ## Reproducible offline walkthrough
 
 From a contributor checkout with dependencies installed:
 
-```powershell
-rtk proxy .venv/Scripts/python.exe scripts/demo_workbench.py --feature
+```sh
+python scripts/demo_workbench.py --feature
 ```
 
 The script creates a disposable repository/profile, generates a deterministic three-task greeting plan, imports it, approves the batch as a clearly named fixture operator, runs independent unittest checks, reviews completion, and verifies preserved keys/revisions/receipts after restart. It uses no paid provider. It does not authorize unattended execution in your real workspace.

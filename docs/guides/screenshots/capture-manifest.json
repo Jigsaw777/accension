@@ -1,0 +1,208 @@
+{
+  "product_version": "1.1.0",
+  "verified_at": "2026-10-13",
+  "verified_source_commit": "832995e654b2b7571ec0fce189d9200808aa06ae",
+  "fixture": "Isolated greeting demo; deterministic mock inference; actual local checks; scripted fixture review",
+  "paid_inference": false,
+  "retouched": false,
+  "images": [
+    {
+      "file": "feature-agents-dark-desktop.png",
+      "width": 1440,
+      "height": 1500,
+      "sha256": "a4c623f5eda4bb4c31c132c3f96908661c12a1f855ccf35525c4743693dc4f5f",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "feature-approval-dark-desktop.png",
+      "width": 1440,
+      "height": 1200,
+      "sha256": "21832f1af0c8f43f8dabb6a4072a3fc96fd2fa0d47478a9ac13e72142740a545",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "feature-board-dark-desktop.png",
+      "width": 1920,
+      "height": 1301,
+      "sha256": "366a2df5a4bc0308b0071d0f2cd3fd64817fb2a24c0c01797bfeb06b432fec2f",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "feature-board-dark-mobile.png",
+      "width": 390,
+      "height": 1661,
+      "sha256": "87721901ace72f6d7bf1ddc94fc7c8e80b35543a12d9bb96ca614cb9d74dc8c2",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "feature-delivery-dark-desktop.png",
+      "width": 1440,
+      "height": 1437,
+      "sha256": "8d2dfceac33e2bcec77536a4af27cc467daa45195bb7d4bce7d0f238a666b8a3",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "feature-prd-light-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "ecd393858a8237727e9f1b85ad0a4a0141d9796c9504451bd384ebe26943adb3",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "feature-review-light-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "3780d87e8159660b54ad7bf8cad0dc2c8530d3f771bfc5806525fdb14c03a23e",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "routing-overview-dark-desktop.png",
+      "width": 1440,
+      "height": 1245,
+      "sha256": "39a07f67eb29f28dd927ab840ad0f01f6e228b0905d5ec841d92626132e60d88",
+      "captured_at": "2026-10-12",
+      "source_commit": "a4ee53b5",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "workbench-dark-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "86b26320557e31c2181a63ab208bfbbde616808831581d43b1899d4359e6a14f",
+      "captured_at": "See earlier theme gallery; original timestamp not retained",
+      "source_commit": "Original test fixture capture; revision not retained",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "workbench-dark-mobile.png",
+      "width": 360,
+      "height": 957,
+      "sha256": "9dc0c6d3e25781b2e36a7f24cf124f93362c4261b0f61a84ebb646745b023457",
+      "captured_at": "See earlier theme gallery; original timestamp not retained",
+      "source_commit": "Original test fixture capture; revision not retained",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "workbench-light-desktop.png",
+      "width": 1440,
+      "height": 1000,
+      "sha256": "712784fcde33fe94765a31d8665fcd97c6b816b596c9fc023a90bd5462f103f6",
+      "captured_at": "See earlier theme gallery; original timestamp not retained",
+      "source_commit": "Original test fixture capture; revision not retained",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "workbench-light-mobile.png",
+      "width": 360,
+      "height": 957,
+      "sha256": "a62e95db70713d45f13175ce0644ef9e860f9fa6806e72c37495e920d4f89c72",
+      "captured_at": "See earlier theme gallery; original timestamp not retained",
+      "source_commit": "Original test fixture capture; revision not retained",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "workbench-remote-dark-mobile.png",
+      "width": 360,
+      "height": 800,
+      "sha256": "79aad23a6aaf7768ce5131937477d45c3075fd61a9934623d901a5da1116ffc7",
+      "captured_at": "See earlier theme gallery; original timestamp not retained",
+      "source_commit": "Original test fixture capture; revision not retained",
+      "verified_at": "2026-10-13"
+    },
+    {
+      "file": "workbench-remote-light-mobile.png",
+      "width": 360,
+      "height": 800,
+      "sha256": "caf0431f816687c42ee9726e6fdcb4d1f46fc890fc93a57bb810f6d587f08163",
+      "captured_at": "See earlier theme gallery; original timestamp not retained",
+      "source_commit": "Original test fixture capture; revision not retained",
+      "verified_at": "2026-10-13"
+    }
+  ],
+  "legacy_routing_images": [
+    {
+      "file": "docs/screenshots/execution-receipt.jpg",
+      "width": 1425,
+      "height": 990,
+      "sha256": "bb77b52ec67dfa8ad3c8923600f81ef4cc63cc754d6e22abe15a664be055098d",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/model-dna.jpg",
+      "width": 1425,
+      "height": 990,
+      "sha256": "a1a9b11005df810972c3bbc26ac3518595e2f7963b6b6ccbf019d9aa162081a2",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/overview-light.jpg",
+      "width": 1424,
+      "height": 1131,
+      "sha256": "3907d744314b1793f5c451d45a4fcc921fbcd8aca9b74408aac91a697c70994d",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/overview.jpg",
+      "width": 1424,
+      "height": 1131,
+      "sha256": "103986420616f744bddda5101fd6accf835bf539e119355dde6fe31d1b0e67b6",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/route-explanation.jpg",
+      "width": 1425,
+      "height": 990,
+      "sha256": "0df4902f99b464d6235f273bb7af5c614d543009dc7be24249f4cb21a7b517bd",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/routing-policy.jpg",
+      "width": 1425,
+      "height": 990,
+      "sha256": "c8c6d8399c1ae68633cd86464e9d425ebfcf00a5bfdf71fde93991bf0514cacc",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/savings-mobile.jpg",
+      "width": 375,
+      "height": 811,
+      "sha256": "c0bdbeacce80590794d0122e0ca89b0b6dce3b79154bbdd2c25c62ca00b13b36",
+      "captured_at": "2026-10-04"
+    },
+    {
+      "file": "docs/screenshots/savings-pulse.jpg",
+      "width": 1425,
+      "height": 990,
+      "sha256": "79475d897a9a2ec1d44f42b7df7e6d6d8dbaa44d334fea409845798c435925dc",
+      "captured_at": "2026-10-04"
+    }
+  ],
+  "ui_asset_sha256": {
+    "src/local_ai_router/static/app.js": "4d57e9687a65bfa3a41230966d3bb90da5647175bd0f8d3cc9452608e57a398d",
+    "src/local_ai_router/static/index.html": "e768fd2e72b15bac314c0206f4b73923935819cff468eba77d403db5bf1e4312",
+    "src/local_ai_router/static/logo.svg": "76ad7a7d6800db7029253e414fae6a447e1e21f20c4e4c83dbcb7c1a44c9dfbd",
+    "src/local_ai_router/static/style.css": "846143443f49ac9da8f60a90d5ee3aea5e0b1edfb243f86151ff68efcc1bbc4a",
+    "src/local_ai_router/static/workbench-lan.html": "59f4475f70818c60c43e952514cbd1cc5ba4d53b3d1c92f32a51c1a122c91e1e",
+    "src/local_ai_router/static/workbench-lan.js": "14d10fa264f34fc6fa05a269cfc27ede05d29580c2477e1c0a10f8c484b7616f",
+    "src/local_ai_router/static/workbench.css": "fa22d3a73fdc125040e4c910c36f8dee186781da598865c6b7a8f713c4a7efce",
+    "src/local_ai_router/static/workbench.html": "7c770d0525f13b9d11cdd9cff4b22517bd8b458753e6a997648243085a32f661",
+    "src/local_ai_router/static/workbench.js": "a71ed41a65783cae29d0e23b68525b8bb7ee4f0f9a1dcfa28412350eb4e64c13"
+  },
+  "ui_hash_normalization": "CRLF normalized to LF for cross-platform Git checkouts",
+  "fresh_capture": "python scripts/capture_docs_screenshots.py --output dist/docs-capture-review",
+  "verification": "Existing public images preserved; current UI fixture captured separately; viewport and themes reviewed. No live provider billing or personal profile."
+}
