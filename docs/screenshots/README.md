@@ -14,7 +14,7 @@ The greeting fixture performed real local file edits and registered tests. Its 1
 
 ## Model evidence
 
-![Model DNA](model-dna.jpg)
+![Model DNA capability and calibration evidence in the mock profile](model-dna.jpg)
 
 ## Routing explanation
 

@@ -19,6 +19,42 @@ These results show the workflow, not production model quality or measured saving
 
 For a LinkedIn post, attach the **Workbench board** first. Add **Completion evidence** as a second image if you want to show the review boundary. Keep the demo description with the post; the pictured metrics are not a benchmark.
 
+## Verified inventory
+
+The [capture manifest](capture-manifest.json) records image hashes/dimensions, capture provenance and current UI asset hashes. Existing images were preserved after comparison with the current isolated browser fixture on 13 October 2026. Historical theme/routing images retain their original dates; missing historical source revisions are labeled, not invented.
+
+| Feature | Guide section |
+|---|---|
+| Model setup | [Providers, models and agents](../models-and-routing.md#configure-an-eligible-model) |
+| Board and mobile board | [Create a project](../workbench.md#create-your-first-project) |
+| PRD editor | [Write requirements](../workbench.md#write-a-prd-manually) |
+| Execution review | [Separate approval gates](../feature-delivery.md#what-each-decision-means) |
+| Completion evidence | [Runs and review](../workbench.md#inspect-runs-review-and-performance) |
+| Agent performance | [Performance and provenance](../workbench.md#inspect-runs-review-and-performance) |
+| Completed delivery | [Greeting example](../feature-delivery.md#worked-example-greeting-demo) |
+
+## Rebuild captures and LinkedIn media
+
+Install the existing browser extra in a developer environment:
+
+```sh
+python -m pip install -e ".[test,dev,browser,lan]"
+python -m playwright install chromium
+python scripts/capture_docs_screenshots.py --output dist/docs-capture-review
+```
+
+The command starts its own loopback service, temporary profile/repository and mock-only providers. It executes actual checks, waits for UI state/fonts, asserts controls, captures six primary screens plus mobile, writes a manifest and stops its owned process. It does not read your working profile. Existing output directories are rejected; failed captures cannot overwrite public images.
+
+Review the fresh images before intentionally replacing gallery files and their manifest. The capture sequence shows an execution review form over previously completed imported tasks without starting a second batch; the completion screen is a separate new attempt awaiting review. Viewport captures retain controls; full results remain in the fixture, not inferred from a picture.
+
+Build the publication package from the verified public originals:
+
+```sh
+python scripts/capture_docs_screenshots.py --package-only
+```
+
+Output: `dist/media/accension-1.1.0-linkedin/`, containing six unchanged high-resolution PNGs and `README.txt`, plus `dist/media/Accension-1.1.0-LinkedIn-Screenshots.zip`. The ZIP contains the actual files. Generated media stays ignored. No automatic posting occurs.
+
 ## Completed delivery
 
 ![Feature delivery after three dependent demo tasks were completed and reviewed](feature-delivery-dark-desktop.png)

@@ -1,5 +1,37 @@
 # Feature delivery in Workbench
 
+For developers who have completed the [Workbench tutorial](workbench.md). Requires a registered repository, trusted checks, installed project dependencies and eligible models. [Documentation index](../README.md).
+
+## What each decision means
+
+| Stage | Result | What it does not authorize |
+|---|---|---|
+| PRD approval | Accepts the current requirements revision | Import or execution |
+| Work item import | Creates reviewed task records | Repository edits |
+| Agent eligibility / assignment | Finds and selects a permitted worker | Starting work |
+| Execution approval | Grants current scope, policy and spending allowance | Accepting the resulting changes |
+| Actual execution | Produces an attempt with host checks/artifacts | Automatic completion from model text |
+| Verification | Records independent validation | Bypassing required human review |
+| Completion review | Accepts/rejects current evidence | Accepting stale evidence |
+| Final completion | Required members are DONE | Automatic commit, push or merge |
+
+```mermaid
+flowchart TD
+    PRD[Approve PRD revision] --> Import[Review and import tasks]
+    Import --> Worker[Select eligible agents]
+    Worker --> Grant[Preview and approve execution]
+    Grant --> Run[Run when dependencies are done]
+    Run --> Check[Independent checks and artifacts]
+    Check --> Review[Required evidence-bound review]
+    Review --> Done[Required members done]
+```
+
+## Worked example: Greeting demo
+
+Require named/blank inputs to return the expected greeting. Import three tasks: implementation, tests depending on implementation, and usage documentation depending on tests. Each names its permitted files and registered `tests` check. Select an eligible Engine worker and review a feature allowance of USD 0.30 before starting.
+
+The implementation runs first. Passing checks leave it in **REVIEW** when human review is required. Review its artifacts/checks and approve current evidence; only **DONE** releases the dependent test task. Repeat for tests and documentation. Batch **COMPLETED** means required task completion, not merely three successful model responses. The [disposable demo](#reproducible-fixture) executes this example with mock inference and real tests; its costs are synthetic.
+
 Start the GUI with `accs start`, then `accs workbench open`. Windows desktop users can launch **Accension** from Start to open Workbench. The local installer is generated at `dist/windows/Accension-latest-windows-x64.exe`; its adjacent manifest records source and UI hashes. Build outputs and local implementation plans remain ignored.
 
 ## Idea, review and execution
@@ -18,13 +50,21 @@ Boards use compact metadata and bounded column pages. Activity and attempts use 
 
 ## Reproducible fixture
 
-```powershell
-rtk proxy .venv/Scripts/python.exe scripts/demo_workbench.py --feature
+```sh
+python scripts/demo_workbench.py --feature
 ```
 
 This creates a disposable repository/profile and three greeting tasks, approves a batch as an explicitly named fixture operator, runs independent unittest checks, reviews completion and verifies keys/revisions/receipts after restart. No paid calls or JSON hand edits are needed. The automated whole-feature journey also tests a pinned local worker, mocked OpenAI-compatible cloud worker and real HTTPS connector with a disposable trusted CA. These fixtures prove boundaries and host execution, not live vendor-account compatibility.
 
 ## Ownership and protocol
+
+### Advanced: contracts, budgets and recovery
+
+Approval binds to revisions, hashes, chosen agents/model policy and expiry. If a contract, grant or policy changes, **NEEDS_REVIEW** prevents dispatch under the old decision. Refresh and inspect a new preview; never reuse stale approval payloads.
+
+Reservations hold allowance before execution so concurrent tasks cannot spend the same budget twice. Known settled costs debit the ledger. Unknown provider/connector outcomes retain uncertain reservations in **RECONCILING**; unknown does not mean free. Planning costs have their own accounting.
+
+Pause prevents new dispatch; cancellation requests cleanup of in-flight work. Interrupted workers require reconciliation of the original attempt and held allowance before retry. Do not start another writer against uncertain state. Failed validation requires inspecting the actual failed check, correcting its cause and using current contracts/permissions for retry.
 
 The existing Engine owns model calls, approved file application, independent validation and receipts. One Workbench scheduler owns dispatch. A delivery batch is durable intent over existing items; item/batch reservations commit together. Original human grants, revision hashes and current policy are checked before dispatch and after provider waits. Pause/cancel/recovery never create a second writer. Uncertain connector outcomes retain reservations in RECONCILING.
 

@@ -321,5 +321,40 @@
     "categories": ["subprocess.run"],
     "count": 1,
     "reason": "Reviewed explicit developer/CI installer smoke: checksum-verified build, bundled launcher and uninstaller, fixed argv without shell, hidden window and 180-second timeout; fresh home/install path, no production registry registration or provider inference."
+  },
+  {
+    "id": "ae9b2285823f08a748bec548a384d2c2d54809d43ccfa8cc0035d6ff2ce8f467",
+    "file": "scripts/capture_docs_screenshots.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed documentation fixture server: hard-coded loopback only, disposable home/repository, mock-only provider configuration, no production profile or paid credentials; owned child terminated after capture."
+  },
+  {
+    "id": "1273fa37f95f2aa3cbc9b5b6089f3495c5f16bd3b566e74d82f53b0e0889b056",
+    "file": "scripts/capture_docs_screenshots.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed context-managed socket used only to choose a disposable loopback port; immediately closed."
+  },
+  {
+    "id": "3fdfdcc877af96bdb37b49ae89289d5ce09873e77e0fefe86ff2886332a8a658",
+    "file": "scripts/capture_docs_screenshots.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed bind to literal 127.0.0.1 port zero for local screenshot fixture; never binds external interfaces."
+  },
+  {
+    "id": "9a0fa9ce3ce9896808c4ca7270cf2087e613e84fdf09ad8ae58f2de7990870df",
+    "file": "scripts/capture_docs_screenshots.py",
+    "categories": ["subprocess.Popen"],
+    "count": 1,
+    "reason": "Reviewed fixed Python/script argv without shell; disposable profile, owned mock-only server, hidden Windows process, bounded readiness and terminate/kill cleanup; no user profile or provider authorization."
+  },
+  {
+    "id": "8dcd89ac3793121a7d6fd69c0502385b355f162420510485b56815f45073ba58",
+    "file": "scripts/capture_docs_screenshots.py",
+    "categories": ["subprocess.check_output"],
+    "count": 1,
+    "reason": "Reviewed literal git rev-parse HEAD argv without shell in known repository; read-only source provenance, no secret output or arbitrary documentation commands."
   }
 ]
