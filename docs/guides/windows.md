@@ -1,5 +1,7 @@
 # Windows desktop tutorial
 
+For Windows end users. No Python, Node, Docker or administrator setup is needed. [Documentation index](../README.md) · [Next: Workbench](workbench.md).
+
 Accension uses a local browser interface backed by a user-level Python service. Its installer bundles CPython and provider/LAN dependencies. Installation works offline and needs neither a separate Python installation nor administrator rights. Windows 10 1809+ x64 is required.
 
 ## Install and open
@@ -28,6 +30,10 @@ An offline executable always contains the source snapshot from its build. It can
 
 [Develop Windows build](https://github.com/Jigsaw777/accension/releases/download/windows-develop/Accension-latest-windows-x64.exe) follows successful `develop` builds. These branch downloads are prerelease snapshots. They are available only after that branch contains the workflow and a successful build. PR builds are available through [Windows workflow artifacts](https://github.com/Jigsaw777/accension/actions/workflows/windows-installer.yml), labeled by commit; they are never published to the main/develop download.
 
-## Build and verify from source
+## Troubleshoot installation
+
+If the shortcut shows old controls, stop the old service before relaunching and reload the browser. Inspect the downloaded manifest's source commit; package version alone does not identify a build. If port 8765 is occupied, use the existing installation's `accs status` and `accs stop`, rather than killing unrelated Python processes. For provider/execution errors, run `accs doctor` from the installed CLI or inspect **Logs**. [General troubleshooting](../../TROUBLESHOOTING.md).
+
+## Contributor build
 
 Use [installer build instructions](../../installer/windows/README.md). The builder verifies the official runtime archive, stages a fresh wheel, compares all installed assets with current source, generates the Windows icon from the shared SVG, and writes SHA-256/dependency/source manifests. The real installer smoke test checks both themes, served asset hashes, shortcuts, zero inference, upgrade and uninstall in an isolated profile.

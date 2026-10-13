@@ -1,5 +1,9 @@
 # Workbench architecture and source map
 
+For contributors and developers exploring ownership. No prior knowledge of Workbench internals is required. [Documentation index](../README.md) · [Contributor setup](../../CONTRIBUTING.md).
+
+The browser is a view of the local service. Routing settings and Workbench read the same authoritative configuration/history. CLI and MCP adapt commands to that service; optional LAN exposes a restricted HTTPS listener backed by the same runtime. The scheduler coordinates work, the Engine performs model calls and validated execution, and SQLite retains state/events.
+
 Accension owns one Engine and one persistent local store. Workbench adds project and work-item lifecycle records while reusing the Engine's routing, validation, budgets, repository locks and receipts. Its execution API is versioned independently from private implementation handoff documents.
 
 ```mermaid
@@ -40,7 +44,7 @@ Paths above are relative to `src/local_ai_router` unless they identify root inst
 
 ## Version boundaries
 
-The public package reports 1.1.0. Workbench uses explicit API and schema contracts; database migrations advance through schema 9 and require verified backups. Schema 8 adds activity, model bindings and metrics; schema 9 adds feature delivery, grants and budget reservations. Role prompts use the existing `v1.txt` names and contribute content hashes to execution/cache identity. Operator overrides under the active home are private and do not replace packaged defaults in distribution.
+The public package reports 1.1.0; database schema is 9, configuration schema is 2 and AXIR schema is 1. These version different objects. Migrations require verified backups. Schema 8 adds activity, model bindings and metrics; schema 9 adds feature delivery, grants and budget reservations. Role prompts use existing `v1.txt` names and content hashes. Private operator overrides do not replace packaged defaults in distribution.
 
 Local engineering handoffs use semantic-version folders and a `latest.json` pointer. Their architecture, task sequence and evidence apply only after checking the current source and user instruction. They are excluded from Git and wheels; end users follow these public guides. New handoffs must inherit earlier contracts explicitly and retain earlier versions unchanged.
 

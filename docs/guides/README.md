@@ -7,9 +7,14 @@ These guides describe the checked-in application, package version 1.1.0. Applica
 | Goal | Read |
 |---|---|
 | Install, open, update or uninstall Windows desktop | [Windows tutorial](windows.md) |
+| Use the Python application on any supported platform | [Python quick start](quickstart.md) |
+| Distinguish providers, models, roles, agents and tools | [Models and routing](models-and-routing.md) |
+| Understand separate approval and completion gates | [Feature delivery](feature-delivery.md) |
 | Create a project, define work, execute and review | [Workbench tutorial and reference](workbench.md) |
 | Understand ownership, interfaces and safety | [Architecture](architecture.md), [core design](../../ARCHITECTURE.md) |
 | Find modules and choose where to change code | [Source map](architecture.md#source-map) |
 | Configure routing, providers and clients | [UI](../../UI.md), [providers](../../PROVIDERS.md), [configuration](../../CONFIGURATION.md), [MCP](../../MCP.md) |
 
 Local implementation prompts and task cards are ignored by Git. They are not end-user documentation or runtime prompts. The packaged role prompts remain under `src/local_ai_router/data/prompts`; optional home-directory overrides stay private.
+
+[Public documentation index](../README.md) · [Project README](../../README.md).
