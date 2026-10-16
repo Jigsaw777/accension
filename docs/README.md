@@ -7,7 +7,7 @@ Public documentation for Accension 1.1.0. [Project README](../README.md) · [Gui
 | New user: install and open | [Windows](guides/windows.md), [Python quick start](guides/quickstart.md) |
 | New user: plan a project | [Workbench](guides/workbench.md), [feature delivery](guides/feature-delivery.md) |
 | Understand providers, models and agents | [Models and routing](guides/models-and-routing.md), [providers](../PROVIDERS.md), [routing policy](../ROUTING_POLICY.md) |
-| Inspect examples and captures | [Request examples](examples/README.md), [current gallery](guides/screenshots/feature-showcase.md) |
+| Inspect examples and captures | [51-second product demo](media/accension-demo.mp4), [request examples](examples/README.md), [current gallery](guides/screenshots/feature-showcase.md) |
 | Configure and troubleshoot | [Configuration](../CONFIGURATION.md), [UI](../UI.md), [troubleshooting](../TROUBLESHOOTING.md), [logs](LOGGING.md) |
 | Understand trust boundaries | [Privacy](../PRIVACY.md), [security](../SECURITY.md), [egress budgets](EGRESS_BUDGETS.md) |
 | Use clients/APIs | [CLI](CLI.md), [MCP](../MCP.md), [Codex](../CODEX_SETUP.md), [Claude](../CLAUDE_SETUP.md), [Workbench contracts](WORKBENCH_CONTRACTS.md) |

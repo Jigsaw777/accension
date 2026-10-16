@@ -1,52 +1,79 @@
-# Accension
+# Accension — Your local-first AI engineering Workbench
 
-<img src="src/local_ai_router/static/logo.svg" width="64" height="64" alt="Accension logo">
+**Turn software requirements into structured plans, assign work to AI agents, and track execution through testing and review.**
 
 [![CI](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml/badge.svg)](https://github.com/Jigsaw777/accension/actions/workflows/tests.yml)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](pyproject.toml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 
-**Accension routes AI tasks to suitable models and helps you plan, execute, review and track development work.** It runs on your computer, with local models or optional cloud providers. No Accension account is required.
+Accension is open source, self-hosted and local-first. No hosted Accension account is required. Use local models or optional cloud providers; authorized cloud inference can send project context externally.
 
-**Version 1.1.0 adds Workbench:** projects, product requirements documents (PRDs), dependent work items, approved execution and completion review. Routing and Workbench are two views of the same application. [Release notes](docs/RELEASE_NOTES.md) · [Upgrade notes](docs/UPGRADE_NOTES.md).
+**Version 1.1.0 adds Workbench:** projects, structured requirements, dependent tasks, approved execution and completion review, alongside the existing model router.
 
-Windows, Linux and macOS support the Python application. Windows also has bundled Python installers. Published Windows downloads are **unsigned branch prereleases**, not a stable numbered release.
+[Get started](#get-started) · [Workbench guide](docs/guides/workbench.md) · [Documentation](docs/README.md) · [Releases](https://github.com/Jigsaw777/accension/releases)
 
-## Why Accension exists
+## The problem
 
-Several AI tools can scatter your plans, model settings and code changes. Accension connects planning to execution: choose privacy and spending limits, assign work, inspect actual checks and keep a record of what happened. It coordinates dependent tasks without treating a model's success message as proof of completion.
+AI can write code, but delivering a feature also needs a plan, dependencies, permissions, tests and review. Those decisions often get scattered across chats, terminals and project boards. Accension connects them and keeps evidence of what actually ran.
 
-Costs and model quality depend on your task and providers. Extra planning, checking or repairs can increase spending.
-
-## At a glance
-
-| Need | What Accension provides |
-|---|---|
-| Choose a model | Routing based on capabilities, quality evidence, privacy, price and budget; local and optional cloud providers |
-| Plan a feature | Structured PRDs, reviewed planning proposals and dependent work items |
-| Control execution | Configured agents, registered repositories, allowed paths, trusted checks and current approval |
-| Verify results | Independent checks, artifacts, execution receipts and applicable human completion review |
-| Track work | Board, attempts, activity and agent performance; unknown costs remain unknown |
-| Use your tools | CLI, local browser, MCP, trusted skills and provider plugins |
-| Use another device | Optional HTTPS LAN with pairing and explicit workspace grants |
-
-## See Workbench
+## See Accension in action
 
 ![Accension Workbench board showing dependent demo items across backlog, review and completed states](docs/guides/screenshots/feature-board-dark-desktop.png)
 
-*Workbench organizes development work into dependent items and shows their recorded execution state. This isolated greeting demo uses mock inference and real local tests. Its metrics are demonstration data, not production benchmarks.*
+## From requirement to verified work
 
-[Gallery and provenance](docs/guides/screenshots/feature-showcase.md) · [Step-by-step walkthrough](docs/guides/workbench.md) · [Mobile board](docs/guides/screenshots/feature-board-dark-mobile.png)
+```mermaid
+flowchart TB
+    subgraph Plan[Plan the work]
+        direction LR
+        Requirement --> PRD[PRD approval] --> Items[Work Item import]
+    end
+    subgraph Authorize[Prepare and authorize]
+        direction LR
+        Dependencies --> Agent[Agent assignment] --> Approval[Execution approval]
+    end
+    subgraph Verify[Execute and inspect]
+        direction LR
+        Execution --> Validation[Independent validation] --> Review[Completion review]
+    end
+    Items --> Dependencies
+    Approval --> Execution
+```
 
-## Choose how to start
+**[Watch the complete 51-second demo](docs/media/accension-demo.mp4)** · [8-second preview](docs/media/accension-demo-preview.gif) · [Gallery and capture provenance](docs/guides/screenshots/feature-showcase.md)
 
-| You want to… | Start here |
+*Real browser recording of an isolated greeting project. Deterministic mock inference and a fixture operator; real local tests and persisted receipts. Completed results are identified as recorded attempts. Demo metrics are not production benchmarks.*
+
+For “build a greeting function with tests and documentation,” each step has a separate purpose:
+
+| Stage | What happens |
 |---|---|
-| Use Windows without installing Python | [Windows quick start](#windows-quick-start) |
-| Use the CLI and browser on Windows, Linux or macOS | [Python quick start](#python-quick-start) |
-| Change Accension or add a provider | [Contributor setup](CONTRIBUTING.md), [source map](docs/guides/architecture.md#source-map) |
+| Requirement and PRD approval | Write the problem, scope and acceptance criteria; review the requirements. |
+| Work Item import | Review decomposition and create bounded, persistent tasks. No code runs yet. |
+| Dependencies | Implementation precedes tests, which precede documentation in this example. |
+| Agent assignment | Select an eligible configured worker. Assignment grants no execution authority. |
+| Execution approval | Review the repository, allowed files, registered checks and spending for the current scope. |
+| Execution and validation | Record an actual attempt; run independent local checks and retain artifacts/receipts. |
+| Completion review | Inspect current evidence and approve or reject completion when required. |
 
-## Windows quick start
+## What can Accension do?
+
+| Need | What Accension provides |
+|---|---|
+| Plan a feature | Projects, structured PRDs, reviewed decomposition and dependent Work Items |
+| Choose models and workers | Capability, quality, privacy, price and budget eligibility; configured agents |
+| Control and verify execution | Registered repositories, allowed paths, trusted checks, attempts and receipts |
+| Track work | Board, activity, project and agent dashboards; unknown costs remain unknown |
+| Use your tools | Browser, CLI, MCP, trusted skills, provider plugins and portable AXIR plans |
+| Use another device | Optional HTTPS LAN with pairing and explicit workspace grants |
+
+Tasks can fail, block or need human intervention. Extra planning, checking and repair can increase spending. Accension does not automatically commit, push or merge changes.
+
+## Get started
+
+Manual project and Work Item creation needs no model or paid provider. Use the Windows installer, or install the Python application on Windows, Linux or macOS.
+
+### Windows quick start
 
 Requires **Windows 10 1809 or later, x64**. No separate Python installation or administrator rights are required.
 
@@ -54,7 +81,7 @@ Requires **Windows 10 1809 or later, x64**. No separate Python installation or a
 2. In PowerShell, run the command below and compare its hash with the SHA-256 file. The installer is unsigned; verify its origin and checksum before deciding whether to run it if Windows shows an unknown publisher.
 3. Run the installer. Open **Accension** from the Start menu to open Workbench at `http://127.0.0.1:8765/ui/workbench`.
 4. Choose **Accension settings** to configure providers, models, routing and repositories. **Open Workbench** returns to projects.
-5. Try the [first project tutorial](#first-project-no-model-needed). Use **Stop Accension** in the Start menu to stop the service.
+5. Try the [first project tutorial](#your-first-project). Use **Stop Accension** in the Start menu to stop the service.
 
 ```powershell
 Get-FileHash .\Accension-latest-windows-x64.exe -Algorithm SHA256
@@ -62,7 +89,7 @@ Get-FileHash .\Accension-latest-windows-x64.exe -Algorithm SHA256
 
 Download and run a newer installer to update; installed applications do not update themselves silently. `windows-main` follows successful `main` builds and can change without the package version changing. Check the accompanying source manifest. For uninstall, profile locations, recovery and development builds, read the [Windows guide](docs/guides/windows.md).
 
-## Python quick start
+### Python quick start
 
 Requires Python **3.11+**, Git and a source checkout. These commands install that checkout; they do not assume publication on PyPI. Download dependencies once before offline use.
 
@@ -103,7 +130,9 @@ accs stop
 
 `status` reports service state, `doctor` diagnoses configuration, and `stop` stops the service. Closing the browser leaves it running. If activation fails, use the environment's executable directly; see the [complete quick start](docs/guides/quickstart.md).
 
-## First project: no model needed
+<a id="first-project-no-model-needed"></a>
+
+## Your first project
 
 This walkthrough makes no inference calls and edits no repository files. It stores project data locally.
 
@@ -121,47 +150,23 @@ python scripts/demo_workbench.py --feature
 
 This uses mock inference and a scripted fixture operator, runs real local checks, verifies receipts after reopening and cleans up. It calls no paid provider and never uses your working profile.
 
-## How the AI workflow works
+<a id="workbench"></a>
 
-```mermaid
-flowchart LR
-    Idea[Requirement] --> PRD[PRD and revision review]
-    PRD --> Items[Reviewed work item import]
-    Items --> Dependencies[Dependencies satisfied]
-    Dependencies --> Agent[Agent assignment]
-    Agent --> Approval[Execution approval]
-    Approval --> Run[Actual execution]
-    Run --> Checks[Independent validation]
-    Checks --> Review[Required completion review]
-    Review --> Done[Done]
-```
-
-A **PRD** states the problem, scope and acceptance criteria. A **work item** turns part of it into a bounded task. Dependencies determine when it can proceed. An **agent** performs execution; routing chooses eligible **models** for its roles.
-
-PRD approval accepts requirements. Import creates work items. Execution approval permits the current scope to run. Completion review accepts the resulting evidence. Each is separate. Assignment grants no execution authority. Failed checks, stale approvals or missing review prevent **DONE**.
-
-## Workbench
+## How the Workbench works
 
 | View | What to do there |
 |---|---|
-| Projects | Organize work and select its registered repository |
-| PRDs | Write/generate requirements, review revisions and preview decomposition |
-| Board / work items | Inspect contracts, dependencies, assignments and states |
-| Agents | Configure workers/model choices; inspect performance |
+| Projects / PRDs | Select a registered repository; write requirements and review revisions/decomposition |
+| Board / Work Items | Inspect task contracts, dependencies, assignments and current states |
+| Agents | Configure workers/model choices and inspect eligibility/performance |
 | Runs | Inspect attempts, checks, artifacts and receipts |
 | Activity / Settings | Follow changes; manage workspace settings and optional device pairing |
 
-![Structured PRD editor with problem, scope, requirements and acceptance criteria for the greeting demo](docs/guides/screenshots/feature-prd-light-desktop.png)
+PRD approval accepts requirements. Import creates tasks. Execution approval permits the current scope. Completion review accepts current evidence. Changed contracts or results can require fresh decisions. Failed checks, stale approvals or missing required review prevent **DONE**.
 
-*This synthetic draft makes requirements reviewable before task import.*
+[Full walkthrough](docs/guides/workbench.md) · [Delivery and recovery](docs/guides/feature-delivery.md) · [PRD editor](docs/guides/screenshots/feature-prd-light-desktop.png) · [Execution review](docs/guides/screenshots/feature-approval-dark-desktop.png) · [Agent performance](docs/guides/screenshots/feature-agents-dark-desktop.png) · [Mobile board](docs/guides/screenshots/feature-board-dark-mobile.png)
 
-![Feature execution review showing demo tasks, agents, allowed paths and registered checks](docs/guides/screenshots/feature-approval-dark-desktop.png)
-
-*Review tasks, model policy and spending before starting. Completion remains a separate review.*
-
-See the [full walkthrough](docs/guides/workbench.md), [delivery/recovery guide](docs/guides/feature-delivery.md) and [agent performance capture](docs/guides/screenshots/feature-agents-dark-desktop.png).
-
-## AI models and routing
+## Models, providers, agents and skills
 
 A **provider** makes models available; a **model** performs inference. A **role** describes a responsibility, such as coder or reviewer. An **agent** is a configured worker. The scheduler coordinates tasks. Skills supply guidance; tools perform authorized actions. [Comparison and Android example](docs/guides/models-and-routing.md).
 
@@ -169,15 +174,15 @@ Open **Accension settings** or run `accs ui` for model setup at `/ui`. Connect O
 
 Local inference keeps model calls on your machine. Authorized cloud inference can send project context externally even though the database stays local. Repository privacy, provider policy, egress and spending limits all apply. [Providers](PROVIDERS.md) · [Routing policy](ROUTING_POLICY.md).
 
-## Execution and verification
+## Why verification matters
 
-For the greeting example, register a repository and trusted `tests` command, allow `greeting.py`, and require named/blank inputs to pass. An approved attempt freezes that contract. The Engine applies permitted changes and runs registered checks. A failed test blocks completion; inspect the attempt before retrying.
+**A model reporting success does not automatically mean the work is complete.**
 
-![Completion review with greeting artifacts, independent passing checks and evidence-bound approval](docs/guides/screenshots/feature-review-light-desktop.png)
+For the greeting example, a registered `tests` command checks named and blank inputs. An approved attempt freezes the work contract. The Engine applies permitted changes and runs registered checks; a failing check blocks completion.
 
-*Real local tests ran with mock model output. Passing tests provide evidence; applicable human review still determines completion.*
+A receipt records what ran, checks and artifacts. Applicable human review binds to the current evidence. Interrupted workers go through recovery. Allowed paths, protected repository paths and validation constrain execution; they do not guarantee correctness or sandbox arbitrary code.
 
-A receipt records what ran, checks and artifacts. Required review binds to current evidence; changed contracts/results need fresh decisions. Interrupted workers go through recovery. [Delivery behavior](docs/guides/feature-delivery.md) · [Receipts](docs/EXECUTION_RECEIPTS.md).
+[Completion evidence](docs/guides/screenshots/feature-review-light-desktop.png) · [Delivery behavior](docs/guides/feature-delivery.md) · [Receipts](docs/EXECUTION_RECEIPTS.md)
 
 ## Privacy and security
 
@@ -195,13 +200,13 @@ A human operating the authenticated local CLI can use its explicit approval comm
 
 [Skills and presets](docs/SKILLS.md) supply reusable instructions; [provider plugins](docs/PLUGIN_SDK.md) extend model access. Validate live provider/client combinations in your intended environment.
 
-## Upgrade from 1.0.0
+## What's new in 1.1.0?
 
 1.1.0 adds persistent Workbench planning, delivery and review alongside existing routing. Product **1.1.0**, database schema **9**, configuration schema **2** and AXIR schema **1** are distinct. Existing CLI aliases and `local_ai_router` imports remain supported.
 
 Stop active work and back up your profile. Migrations create a verified backup. **Older binaries must not open upgraded databases.** Restoring a compatible backup loses later database changes and does not undo repository edits. [Upgrade procedure](docs/UPGRADE_NOTES.md) · [Changelog](CHANGELOG.md).
 
-## FAQ
+## Frequently asked questions
 
 | Question | Answer |
 |---|---|
@@ -220,12 +225,14 @@ Stop active work and back up your profile. Migrations create a verified backup. 
 | Where are settings stored? | Windows: `%APPDATA%\accension`; otherwise `~/.config/accension`; `ROUTER_HOME` can override. |
 | How do I report a bug? | Run `accs doctor`, read [troubleshooting](TROUBLESHOOTING.md), open an issue with redacted details. |
 
-## Community and contribution
+## Contributing
 
 [Report bugs or request features](https://github.com/Jigsaw777/accension/issues). Start with [development setup/checks](CONTRIBUTING.md) and the [architecture/source map](docs/guides/architecture.md). PRs require review and CI; passing checks does not automatically merge contributions. Use [Security](SECURITY.md) for vulnerability disclosure.
 
 ## Documentation
 
 The [public documentation index](docs/README.md) groups installation, workflows, routing, security, APIs and contributor references. Technical details stay in canonical guides. Private engineering prompts/task notes stay local.
+
+## License
 
 Licensed under [Apache-2.0](LICENSE). Copyright 2026 Sourik Ganguly and Accension contributors. [Third-party notices](THIRD_PARTY_NOTICES.md).
