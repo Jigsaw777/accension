@@ -223,7 +223,7 @@
   },
   "post_capture_maintenance": {
     "file": "scripts/record_workbench_demo.py",
-    "sha256": "6def71d993fe51ab58cbe59fb5761a50e68785924be70bd7507d2ff37fae4e7c",
-    "change": "Corrected generated launch README links for its output directory after capture and encoding. Browser capture and encoding code unchanged; original capture/encoding hashes above remain the true provenance."
+    "sha256": "90c973bd42c1ca49afd40cbf44c74adca37165795a2f2fcebe338b5053fe6a60",
+    "change": "After capture and encoding, corrected generated launch README links and made the recorder wait for the approved item refresh before reopening its execution contract. Encoding code, application UI and recorded media bytes unchanged; original capture/encoding hashes above remain the true provenance."
   }
 }

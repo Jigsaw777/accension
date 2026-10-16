@@ -174,6 +174,7 @@ def capture(output, name, width, height, ffprobe):
                     focus(page.get_by_role("button", name="Approve execution", exact=True))
                     hold(4)
                     page.get_by_role("button", name="Approve execution", exact=True).click()
+                    expect(page.get_by_role("button", name="Approve execution", exact=True)).to_be_hidden()
                     page.get_by_role("button", name="Review execution contract", exact=True).click()
                     page.get_by_role("button", name="Run approved item", exact=True).click()
                     item = page.locator(".column[data-state='REVIEW']").get_by_role(

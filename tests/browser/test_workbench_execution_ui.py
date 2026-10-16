@@ -87,6 +87,7 @@ def approve_run(page, wait=True):
     page.locator("#detail").get_by_role("button", name=re.compile(r"^Assign [a-f0-9]")).click()
     page.get_by_role("button", name="Review execution contract", exact=True).click()
     page.get_by_role("button", name="Approve execution", exact=True).click()
+    playwright.expect(page.get_by_role("button", name="Approve execution", exact=True)).to_be_hidden()
     page.get_by_role("button", name="Review execution contract", exact=True).click()
     page.get_by_role("button", name="Run approved item", exact=True).click()
     if not wait:
@@ -103,6 +104,16 @@ def approve_run(page, wait=True):
 
 
 def test_browser_real_execution_board_events(page, server):
+    # Keep the real approval response in flight so stale controls cannot hide a race.
+    page.evaluate("""() => {
+        const fetch = window.fetch.bind(window);
+        window.fetch = async (url, options) => {
+            const response = await fetch(url, options);
+            if (options?.body && JSON.parse(options.body).command === "approve_execution")
+                await new Promise(resolve => setTimeout(resolve, 500));
+            return response;
+        };
+    }""")
     open_work(page)
     approve_run(page)
     playwright.expect(page.get_by_role("heading", name="Evidence for completion approval")).to_be_visible()
