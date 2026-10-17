@@ -17,6 +17,7 @@ docs/test-results.xml
 !/docs/guides/
 !/docs/WORKBENCH_CONTRACTS.md
 !/docs/examples/
+!/docs/media/
 # Local implementation prompts, task cards and overrides; packaged defaults stay public.
 /prompts/
 /workbench/

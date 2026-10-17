@@ -1,0 +1,229 @@
+{
+  "product_version": "1.1.0",
+  "captured_at": "2026-10-14T19:23:51.137105+00:00",
+  "source_commit": "a1d4260421fa10b35b06f830a3021da2681222e4",
+  "source_sha256": {
+    "scripts/record_workbench_demo.py": "de20da9eee0a2a3d889ac1195b0f519fff2b630ffeedc1d11d369f6dc9596183",
+    "scripts/demo_workbench.py": "e7ef840128873e61874c38e6b65a5ba8f28bb8e828b1da85d373cd434070ad94",
+    "scripts/capture_docs_screenshots.py": "5b9f2cfd877e7374133a8f5ef2d955c0632441eaac3c093b8157efc5ca6962f0",
+    "src/local_ai_router/static/app.js": "4d57e9687a65bfa3a41230966d3bb90da5647175bd0f8d3cc9452608e57a398d",
+    "src/local_ai_router/static/index.html": "e768fd2e72b15bac314c0206f4b73923935819cff468eba77d403db5bf1e4312",
+    "src/local_ai_router/static/logo.svg": "76ad7a7d6800db7029253e414fae6a447e1e21f20c4e4c83dbcb7c1a44c9dfbd",
+    "src/local_ai_router/static/style.css": "846143443f49ac9da8f60a90d5ee3aea5e0b1edfb243f86151ff68efcc1bbc4a",
+    "src/local_ai_router/static/workbench-lan.html": "59f4475f70818c60c43e952514cbd1cc5ba4d53b3d1c92f32a51c1a122c91e1e",
+    "src/local_ai_router/static/workbench-lan.js": "14d10fa264f34fc6fa05a269cfc27ede05d29580c2477e1c0a10f8c484b7616f",
+    "src/local_ai_router/static/workbench.css": "fa22d3a73fdc125040e4c910c36f8dee186781da598865c6b7a8f713c4a7efce",
+    "src/local_ai_router/static/workbench.html": "7c770d0525f13b9d11cdd9cff4b22517bd8b458753e6a997648243085a32f661",
+    "src/local_ai_router/static/workbench.js": "a71ed41a65783cae29d0e23b68525b8bb7ee4f0f9a1dcfa28412350eb4e64c13"
+  },
+  "method": "Playwright Chromium record_video; two responsive browser viewports; FFmpeg trims/letterboxes/captions",
+  "fixture": "capture_docs_screenshots.serve / demo_workbench --feature; isolated temporary home/repository",
+  "inference": "deterministic mock only; provider discovery disabled; no paid inference",
+  "tests": "python -m unittest discover -v; named/blank greeting cases; persisted receipt hashes",
+  "disclosure": "Demo fixture / mock inference / real local tests",
+  "story": "First three tasks pre-executed and reviewed by fixture operator. Fourth task assigned, approved, executed and completion-reviewed through real UI. Execution wait omitted; evidence explicitly reviewed after execution.",
+  "captures": {
+    "16x9": {
+      "raw": "raw-16x9.webm",
+      "sha256": "11683a257731f96359671d33d33477d1b9b08f5e12f9e80f1d5f350fb63a2d41",
+      "viewport": [
+        1440,
+        675
+      ],
+      "chromium": "145.0.7632.6",
+      "scenes": [
+        {
+          "key": "hook",
+          "duration": 5,
+          "title": "AI writes code. Who tracks the work?",
+          "subtitle": "Accension - Local-first AI engineering Workbench",
+          "start": 1.45
+        },
+        {
+          "key": "requirements",
+          "duration": 8,
+          "title": "Turn requirements into a reviewable PRD",
+          "subtitle": "Requirements approval is separate from execution",
+          "start": 7.435
+        },
+        {
+          "key": "breakdown",
+          "duration": 9,
+          "title": "Break work into dependent tasks",
+          "subtitle": "Greeting, tests, documentation / completed fixture tasks",
+          "start": 16.529
+        },
+        {
+          "key": "scope",
+          "duration": 4,
+          "title": "Choose eligible agents and approve execution",
+          "subtitle": "Review allowed files and registered checks",
+          "start": 26.732
+        },
+        {
+          "key": "approval",
+          "duration": 5,
+          "title": "Assignment does not start execution",
+          "subtitle": "Review the current contract before approving",
+          "start": 32.388
+        },
+        {
+          "key": "evidence",
+          "duration": 6,
+          "title": "Verify actual results",
+          "subtitle": "Reviewing a completed attempt / real local tests",
+          "start": 41.513
+        },
+        {
+          "key": "review",
+          "duration": 6,
+          "title": "An AI success message is not completion",
+          "subtitle": "Inspect evidence, then approve completion separately",
+          "start": 48.419
+        },
+        {
+          "key": "closing",
+          "duration": 8,
+          "title": "Accension 1.1.0",
+          "subtitle": "Open source / Self-hosted / Local-first",
+          "start": 55.341
+        }
+      ]
+    },
+    "linkedin-4x5": {
+      "raw": "raw-linkedin-4x5.webm",
+      "sha256": "06a91bd7715880027fb59453703206b7db3f8ad67aac674e22ba89a46190071a",
+      "viewport": [
+        960,
+        1000
+      ],
+      "chromium": "145.0.7632.6",
+      "scenes": [
+        {
+          "key": "hook",
+          "duration": 5,
+          "title": "AI writes code. Who tracks the work?",
+          "subtitle": "Accension - Local-first AI engineering Workbench",
+          "start": 1.422
+        },
+        {
+          "key": "requirements",
+          "duration": 8,
+          "title": "Turn requirements into a reviewable PRD",
+          "subtitle": "Requirements approval is separate from execution",
+          "start": 7.406
+        },
+        {
+          "key": "breakdown",
+          "duration": 9,
+          "title": "Break work into dependent tasks",
+          "subtitle": "Greeting, tests, documentation / completed fixture tasks",
+          "start": 16.469
+        },
+        {
+          "key": "scope",
+          "duration": 4,
+          "title": "Choose eligible agents and approve execution",
+          "subtitle": "Review allowed files and registered checks",
+          "start": 26.61
+        },
+        {
+          "key": "approval",
+          "duration": 5,
+          "title": "Assignment does not start execution",
+          "subtitle": "Review the current contract before approving",
+          "start": 32.266
+        },
+        {
+          "key": "evidence",
+          "duration": 6,
+          "title": "Verify actual results",
+          "subtitle": "Reviewing a completed attempt / real local tests",
+          "start": 40.36
+        },
+        {
+          "key": "review",
+          "duration": 6,
+          "title": "An AI success message is not completion",
+          "subtitle": "Inspect evidence, then approve completion separately",
+          "start": 47.25
+        },
+        {
+          "key": "closing",
+          "duration": 8,
+          "title": "Accension 1.1.0",
+          "subtitle": "Open source / Self-hosted / Local-first",
+          "start": 54.141
+        }
+      ]
+    }
+  },
+  "ffmpeg": "ffmpeg version 9.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "encoding_source_sha256": "de20da9eee0a2a3d889ac1195b0f519fff2b630ffeedc1d11d369f6dc9596183",
+  "font": {
+    "name": "segoeuib.ttf",
+    "sha256": "b169e636719880976a97e94e3b1cb3dbe5f4a38eabc037bf9f2a9165154c3ad2"
+  },
+  "outputs": [
+    {
+      "file": "demo-16x9.mp4",
+      "bytes": 1814216,
+      "sha256": "6362cff3e882495b2ed91ea0b3bb2a3af18122731d2774b28292adff0c928462",
+      "duration": 51.0,
+      "width": 1920,
+      "height": 1080,
+      "codec": "h264",
+      "pixel_format": "yuv420p",
+      "fps": 30,
+      "full_decode": "passed",
+      "black_frames": "none at 99% / 0.15s threshold"
+    },
+    {
+      "file": "demo-linkedin-4x5.mp4",
+      "bytes": 1718750,
+      "sha256": "e3509075b927af60185a06f3a38eaadad6055e4d55d3e799b1830aedb7fecb0a",
+      "duration": 51.0,
+      "width": 1080,
+      "height": 1350,
+      "codec": "h264",
+      "pixel_format": "yuv420p",
+      "fps": 30,
+      "full_decode": "passed",
+      "black_frames": "none at 99% / 0.15s threshold"
+    }
+  ],
+  "auxiliary_outputs": [
+    {
+      "file": "thumbnail.png",
+      "bytes": 446964,
+      "sha256": "d9e6b8900a71549f7b7c64c329e344aa815cc1bffe693a8839a7d3796a2c1c6f",
+      "width": 1920,
+      "height": 1080,
+      "duration": "still"
+    },
+    {
+      "file": "accension-demo-preview.gif",
+      "bytes": 296770,
+      "sha256": "8247641249e6f0ae5a5c2aab666563748ed65cd1560afbe57cd891674360753c",
+      "width": 640,
+      "height": 360,
+      "duration": "8.000000"
+    }
+  ],
+  "visual_review": {
+    "status": "passed",
+    "method": "Codex visual inspection of all eight scene frames in both aspect ratios, plus full-resolution caption, acceptance, check-output, board and post-completion frames",
+    "findings": "Readable captions; real application states; all three task titles visible; current checks and completion controls shown; closing URL correct; no personal paths, credentials, empty application windows or persistent spinners observed",
+    "date": "2026-10-15",
+    "limitations": "Representative-frame review, not a claim of exhaustive OCR or a security guarantee. Synthetic mock inference, no live-provider quality benchmark."
+  },
+  "public_copies": {
+    "docs/media/accension-demo.mp4": "6362cff3e882495b2ed91ea0b3bb2a3af18122731d2774b28292adff0c928462",
+    "docs/media/accension-demo-preview.gif": "8247641249e6f0ae5a5c2aab666563748ed65cd1560afbe57cd891674360753c"
+  },
+  "post_capture_maintenance": {
+    "file": "scripts/record_workbench_demo.py",
+    "sha256": "90c973bd42c1ca49afd40cbf44c74adca37165795a2f2fcebe338b5053fe6a60",
+    "change": "After capture and encoding, corrected generated launch README links and made the recorder wait for the approved item refresh before reopening its execution contract. Encoding code, application UI and recorded media bytes unchanged; original capture/encoding hashes above remain the true provenance."
+  }
+}
