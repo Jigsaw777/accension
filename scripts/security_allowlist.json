@@ -356,5 +356,47 @@
     "categories": ["subprocess.check_output"],
     "count": 1,
     "reason": "Reviewed literal git rev-parse HEAD argv without shell in known repository; read-only source provenance, no secret output or arbitrary documentation commands."
+  },
+  {
+    "id": "cfb54dcaa1b570c9649379f40b3d38e6fd9c491f216ba7076f650d5eeb230e43",
+    "file": "scripts/record_workbench_demo.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed local FFmpeg black-frame scan: resolved operator-selected executable, fixed argv and locally recorded media, no shell, no network inputs; captures diagnostics and checks failure."
+  },
+  {
+    "id": "f70f57f4ef3748c2f4a6b88b114cdf728cc283f88160f162535d0b40202e05ea",
+    "file": "scripts/record_workbench_demo.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed media helper and every caller: explicit argv for git read-only provenance or resolved FFmpeg/ffprobe tools, no shell, local owned captures and staged outputs. Font and executable paths come from the invoking operator; raw input hashes are verified before re-encoding."
+  },
+  {
+    "id": "337689dc5b8fdc1e033ad665cacc7b1c38d1c803ef40b7aa8aa0c304a00cd373",
+    "file": "scripts/record_workbench_demo.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed context-managed socket solely for selecting an ephemeral loopback port; closes before the isolated fixture starts and never accepts connections."
+  },
+  {
+    "id": "f2ecbda7071bacb701cba3a79eeb1bd90873c24e3781512d29b4c1d3ea377c45",
+    "file": "scripts/record_workbench_demo.py",
+    "categories": ["network-listener"],
+    "count": 1,
+    "reason": "Reviewed bind to hard-coded 127.0.0.1 port zero; no external interface, LAN configuration or authorization changes."
+  },
+  {
+    "id": "89e0d379f4e17135166657ff8f8be99b4bea5682c11bc464c919c0cf26952630",
+    "file": "scripts/record_workbench_demo.py",
+    "categories": ["subprocess.Popen"],
+    "count": 1,
+    "reason": "Reviewed fixed Python/capture fixture argv without shell, disposable temporary home and synthetic repository, mock-only inference and disabled discovery. Hidden Windows child, bounded readiness, and owned process-tree cleanup in finally."
+  },
+  {
+    "id": "067ac0ca4b60d51bac935069996a0a01a82557ccb592aa7e9fd4faddb5056479",
+    "file": "scripts/record_workbench_demo.py",
+    "categories": ["subprocess.run"],
+    "count": 1,
+    "reason": "Reviewed Windows taskkill with literal switches and the exact owned Popen PID; terminates only the recorder's fixture process tree, including venv launcher and Workbench worker, before temporary cleanup. No shell or process-name matching."
   }
 ]

@@ -19,6 +19,53 @@ These results show the workflow, not production model quality or measured saving
 
 For a LinkedIn post, attach the **Workbench board** first. Add **Completion evidence** as a second image if you want to show the review boundary. Keep the demo description with the post; the pictured metrics are not a benchmark.
 
+## Recorded product demo
+
+**[Watch the complete demo](../../media/accension-demo.mp4)** · [Short GIF preview](../../media/accension-demo-preview.gif) · [Video manifest](../../media/accension-demo-manifest.json)
+
+| File | Duration | Dimensions / encoding | Use |
+|---|---|---|---|
+| `docs/media/accension-demo.mp4` | 51 seconds | 1920 × 1080, H.264, yuv420p, 30 fps | README / general demo |
+| `dist/media/accension-1.1.0-launch/demo-16x9.mp4` | 51 seconds | Same verified bytes as the public MP4 | General upload |
+| `dist/media/accension-1.1.0-launch/demo-linkedin-4x5.mp4` | 51 seconds | 1080 × 1350, H.264, yuv420p, 30 fps | LinkedIn upload |
+| `dist/media/accension-1.1.0-launch/thumbnail.png` | Still | 1920 × 1080 | Cover image |
+| `docs/media/accension-demo-preview.gif` | 8 seconds | 640 × 360, 6 fps, 64-color palette | Lightweight preview |
+
+The MP4 and GIF in `docs/media/` are versioned publication assets. Files under `dist/` are local, ignored outputs; they are not GitHub download links. Review and commit the documentation/media changes before sharing their repository links. Nothing is automatically uploaded.
+
+### Provenance and what actually happened
+
+Playwright Chromium recorded the real application at two responsive viewport sizes. FFmpeg trims loading/setup gaps, scales the complete browser viewport, adds caption bands and encodes silent MP4s with fast-start metadata. No still-image slideshow, generated UI, desktop capture or fabricated execution state is used. The portrait version repeats the same workflow in a fresh isolated fixture, keeping controls readable without cropping the desktop recording.
+
+The application source commit is `a1d4260421fa10b35b06f830a3021da2681222e4`. The manifest also identifies the working-tree recorder and current UI/demo source by SHA-256, the browser/encoder versions, raw recording hashes, scene offsets and final output hashes. A later regeneration will record its own source commit and hashes.
+
+The fixture reuses `scripts/capture_docs_screenshots.py` and `scripts/demo_workbench.py --feature`. Three dependent tasks implement the greeting, add tests and write usage documentation. They execute before filming, with a scripted fixture operator approving their results; receipts survive reopening. The browser then assigns and approves a fourth verification task, starts it, inspects its completed attempt and approves completion separately. The waiting period is trimmed. The evidence caption explicitly says it is reviewing a completed attempt.
+
+Real `python -m unittest discover -v` checks verify named and blank greeting inputs. Persisted evidence contains passing checks, exit code zero, artifact hashes and a receipt hash. This exercises the host validator, not a model's claim of success. **Demo fixture / mock inference / real local tests** remains visible. Metrics and cost estimates are synthetic, not provider invoices or production quality benchmarks.
+
+Each recording uses a temporary profile and synthetic repository. Mock-only inference and disabled discovery prevent paid provider calls. The browser blocks external requests. The service stays on loopback with its normal session/CSRF controls. The recorder closes Chromium and terminates its own process tree; it does not read a normal user profile or alter LAN settings.
+
+### Reproduce and inspect the video
+
+Use the browser development environment below plus FFmpeg and ffprobe on `PATH`. Install FFmpeg from its [official download page](https://ffmpeg.org/download.html), or supply existing executable paths using `--ffmpeg` and `--ffprobe`. No additional Python media dependency or external font download is needed.
+
+```sh
+python -m pip install -e ".[test,dev,browser,lan]"
+python -m playwright install chromium
+```
+
+Windows, using the installed Segoe UI font:
+
+```powershell
+python scripts/record_workbench_demo.py --font C:/Windows/Fonts/segoeuib.ttf
+```
+
+On other platforms, pass an existing TrueType font, for example `/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf`. Font choice is recorded in the manifest. The default output is `dist/media/accension-1.1.0-launch/`; choose a fresh `--output` directory for another capture. Existing directories are rejected. To retry encoding without recapturing, use `--encode-only` with the same output and font; raw recording hashes are checked first.
+
+The script asserts real UI states and passing persisted evidence, probes each MP4, checks codec/pixel format/dimensions/frame rate/duration, decodes every frame and checks for sustained black frames. `source-*.png` and `review-*.png` are provided for visual inspection. Review each scene for readable text, correct captions, controls, privacy and the closing GitHub URL before publication; automatic checks alone cannot establish visual quality.
+
+After review, copy `demo-16x9.mp4` to `docs/media/accension-demo.mp4`, the GIF to `docs/media/accension-demo-preview.gif`, and the reviewed `media-manifest.json` to `docs/media/accension-demo-manifest.json`. Keep hashes in agreement. See the launch package's `README.txt` for upload instructions, disclosures and proposed GitHub About values requiring maintainer approval.
+
 ## Verified inventory
 
 The [capture manifest](capture-manifest.json) records image hashes/dimensions, capture provenance and current UI asset hashes. Existing images were preserved after comparison with the current isolated browser fixture on 13 October 2026. Historical theme/routing images retain their original dates; missing historical source revisions are labeled, not invented.
